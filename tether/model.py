@@ -116,10 +116,15 @@ def normalize(kind: IdKind, value: str) -> str:
 
 @dataclass(frozen=True)
 class Identifier:
+    """An identifier in canonical form; ``raw`` keeps the value exactly as recorded."""
+
     kind: IdKind
     value: str
+    raw: str = field(default="", compare=False, hash=False)
 
     def __post_init__(self) -> None:
+        if not self.raw:
+            object.__setattr__(self, "raw", str(self.value))
         object.__setattr__(self, "value", normalize(self.kind, self.value))
 
     @property

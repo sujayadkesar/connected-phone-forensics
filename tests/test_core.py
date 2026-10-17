@@ -22,6 +22,14 @@ def test_filetime_int_and_bytes():
     assert timeutil.from_filetime(ft.to_bytes(8, "little")) == dt
 
 
+def test_large_integer_timestamps_are_exact():
+    # 18-digit FILETIMEs and ns counts exceed float precision; conversion must be exact.
+    assert timeutil.from_filetime(130_688_948_467_037_060).microsecond == 703706
+    assert timeutil.from_unix(1_700_000_000_123_456_789, "ns").microsecond == 123456
+    assert timeutil.from_cocoa(700_000_000_123_456_789).microsecond == 123456
+    assert timeutil.from_unix("1700000000123", "ms").microsecond == 123000
+
+
 def test_zero_and_garbage_timestamps_become_none():
     assert timeutil.from_filetime(0) is None
     assert timeutil.from_unix(0) is None

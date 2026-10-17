@@ -95,7 +95,9 @@ def _cards(result: ScanResult, devices) -> str:
         if dev.device_class:
             os_badge += f'<span class="badge">{escape(dev.device_class)}</span>'
         ids = "".join(
-            f"<tr><td>{escape(i['kind'])}</td><td class='mono'>{escape(i['value'])}</td>"
+            f"<tr><td>{escape(i['kind'])}</td><td class='mono'>{escape(i['value'])}"
+            + (f"<div class='muted'>as recorded: {escape(', '.join(i['as_recorded']))}</div>" if i['as_recorded'] else "")
+            + "</td>"
             f"<td>{escape(i['strength'])}</td><td class='mono'>{escape(', '.join(i['sources']))}</td></tr>"
             for i in d["identifiers"])
         chans = "".join(

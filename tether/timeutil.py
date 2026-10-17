@@ -28,14 +28,37 @@ def _check(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _num(value) -> float | None:
+def _num(value) -> int | float | None:
+    """Parse a number, keeping integers exact.
+
+    FILETIME and nanosecond values exceed the 53-bit precision of a float, so
+    integers (and integer strings) must never pass through float().
+    """
     if value is None or isinstance(value, bool):
         return None
+    if isinstance(value, int):
+        return value or None
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return int(text) or None
+        except ValueError:
+            pass
     try:
         n = float(value)
     except (TypeError, ValueError):
         return None
+    if n != n or n in (float("inf"), float("-inf")):
+        return None
     return n if n != 0 else None
+
+
+def _delta_us(n: int | float, per_second: int) -> timedelta:
+    """timedelta for n units where per_second units make one second, exact for ints."""
+    if isinstance(n, int):
+        return timedelta(microseconds=n * 1_000_000 // per_second) if per_second <= 1_000_000 \
+            else timedelta(microseconds=n // (per_second // 1_000_000))
+    return timedelta(seconds=n / per_second)
 
 
 def from_filetime(value) -> datetime | None:
@@ -48,7 +71,7 @@ def from_filetime(value) -> datetime | None:
     if n is None:
         return None
     try:
-        return _check(_FILETIME_EPOCH + timedelta(microseconds=int(n) // 10))
+        return _check(_FILETIME_EPOCH + _delta_us(n, 10_000_000))
     except OverflowError:
         return None
 
@@ -58,9 +81,9 @@ def from_unix(value, unit: str = "s") -> datetime | None:
     n = _num(value)
     if n is None:
         return None
-    div = {"s": 1, "ms": 1e3, "us": 1e6, "ns": 1e9}[unit]
+    per_second = {"s": 1, "ms": 1_000, "us": 1_000_000, "ns": 1_000_000_000}[unit]
     try:
-        return _check(_UNIX_EPOCH + timedelta(seconds=n / div))
+        return _check(_UNIX_EPOCH + _delta_us(n, per_second))
     except OverflowError:
         return None
 
@@ -84,10 +107,10 @@ def from_cocoa(value) -> datetime | None:
     n = _num(value)
     if n is None:
         return None
-    if abs(n) > 1e11:
-        n = n / 1e9
     try:
-        return _check(_COCOA_EPOCH + timedelta(seconds=n))
+        if abs(n) > 1e11:
+            return _check(_COCOA_EPOCH + _delta_us(n, 1_000_000_000))
+        return _check(_COCOA_EPOCH + _delta_us(n, 1))
     except OverflowError:
         return None
 
@@ -98,7 +121,7 @@ def from_hfs(value) -> datetime | None:
     if n is None:
         return None
     try:
-        return _check(_HFS_EPOCH + timedelta(seconds=n))
+        return _check(_HFS_EPOCH + _delta_us(n, 1))
     except OverflowError:
         return None
 
@@ -109,7 +132,7 @@ def from_webkit(value) -> datetime | None:
     if n is None:
         return None
     try:
-        return _check(_FILETIME_EPOCH + timedelta(microseconds=n))
+        return _check(_FILETIME_EPOCH + _delta_us(n, 1_000_000))
     except OverflowError:
         return None
 

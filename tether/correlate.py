@@ -74,6 +74,7 @@ class Device:
     phone_os: str | None = None
     device_class: str | None = None
     identifiers: dict[Identifier, set[str]] = field(default_factory=dict)
+    raw_values: dict[Identifier, set[str]] = field(default_factory=dict)
     channels: dict[str, ChannelSummary] = field(default_factory=dict)
     systems: set[str] = field(default_factory=set)
     users: set[str] = field(default_factory=set)
@@ -96,6 +97,7 @@ class Device:
             "last_seen": iso(self.last_seen),
             "identifiers": [
                 {"kind": i.kind.value, "value": i.value, "strength": i.strength.value,
+                 "as_recorded": sorted(self.raw_values.get(i, set()) - {i.value}),
                  "sources": sorted(src)} for i, src in idents
             ],
             "channels": [
@@ -217,6 +219,7 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
             dev.observation_ids.append(idx)
             for i in obs.device_ids:
                 dev.identifiers.setdefault(i, set()).add(obs.artifact)
+                dev.raw_values.setdefault(i, set()).add(i.raw)
                 if i.kind == IdKind.DEVICE_NAME:
                     names[i.value] += 1
             if obs.phone_os:
