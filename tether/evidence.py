@@ -34,6 +34,7 @@ class EvidenceFS:
         if not self.root.is_dir():
             raise NotADirectoryError(self.root)
         self._hashes: dict[Path, str] = {}
+        self._rel: dict[Path, str] = {}
 
     # -- listing ---------------------------------------------------------
 
@@ -123,10 +124,15 @@ class EvidenceFS:
 
     def rel(self, path: Path) -> str:
         """Path relative to the root, '/'-separated, as it appears in the evidence."""
-        try:
-            return Path(path).resolve().relative_to(self.root).as_posix()
-        except ValueError:
-            return Path(path).as_posix()
+        p = Path(path)
+        hit = self._rel.get(p)
+        if hit is None:
+            try:
+                hit = p.resolve().relative_to(self.root).as_posix()
+            except ValueError:
+                hit = p.as_posix()
+            self._rel[p] = hit
+        return hit
 
     def sha256(self, path: Path) -> str | None:
         path = Path(path)
@@ -167,16 +173,15 @@ class SystemRoot:
     label: str
     users: list[UserProfile] = field(default_factory=list)
     details: dict[str, str] = field(default_factory=dict)
+    _homes: list[tuple[str, str]] | None = field(default=None, repr=False)
 
-    def user_for(self, path: Path) -> str | None:
-        """Name of the user profile that contains a path, if any."""
-        p = Path(path).resolve()
-        for u in self.users:
-            try:
-                p.relative_to(u.home.resolve())
-                return u.name
-            except ValueError:
-                continue
+    def user_for(self, rel_path: str) -> str | None:
+        """Name of the user profile containing a path relative to the root, if any."""
+        if self._homes is None:
+            self._homes = [(self.fs.rel(u.home).rstrip("/") + "/", u.name) for u in self.users]
+        for prefix, name in self._homes:
+            if rel_path.startswith(prefix):
+                return name
         return None
 
 

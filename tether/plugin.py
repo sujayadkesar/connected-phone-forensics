@@ -196,8 +196,7 @@ class Context:
     def emit(self, obs: Observation) -> None:
         obs.system = self.system.label
         if obs.user is None:
-            src = self.fs.root / obs.provenance.source_path
-            obs.user = self.system.user_for(src)
+            obs.user = self.system.user_for(obs.provenance.source_path)
         self.observations.append(obs)
 
     def cover(self, path: Path, status: str, records: int = 0, note: str = "") -> None:

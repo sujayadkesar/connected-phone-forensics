@@ -50,7 +50,7 @@ border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var
 
 _JS = r"""
 const D=JSON.parse(document.getElementById('tether-data').textContent);
-const rows=D.timeline;const tb=document.querySelector('#tl tbody');const PAGE=500;let shown=0,filtered=rows;
+const rows=D.rows.map(a=>{const o={};D.keys.forEach((k,i)=>{o[k]=(k in D.dict)?D.dict[k][a[i]]:a[i];});return o;});const tb=document.querySelector('#tl tbody');const PAGE=500;let shown=0,filtered=rows;
 const q=document.getElementById('q'),fd=document.getElementById('fdev'),fc=document.getElementById('fch'),fa=document.getElementById('fart');
 function opt(sel,vals){for(const v of vals){const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);}}
 opt(fd,[...new Set(rows.map(r=>r.device||'(none)'))].sort());opt(fc,[...new Set(rows.map(r=>r.channel))].sort());
@@ -159,9 +159,66 @@ schema is not one Tether knows: it was <i>not</i> parsed and should be examined 
 <tbody>{plugins}</tbody></table></details>"""
 
 
+HTML_MAX_ROWS = 100_000
+_MAX_STR = 600
+
+
+def _compact(value):
+    """Shorten long strings and blobs inside a record's data for the embedded timeline."""
+    if isinstance(value, str):
+        return value if len(value) <= _MAX_STR else value[:_MAX_STR] + f"… [{len(value)} chars]"
+    if isinstance(value, (bytes, bytearray)):
+        return f"<{len(value)} bytes>"
+    if isinstance(value, dict):
+        return {k: _compact(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        items = [_compact(v) for v in value[:50]]
+        return items + ([f"… {len(value) - 50} more"] if len(value) > 50 else [])
+    return value
+
+
+_ROW_KEYS = ("datetime", "timestamp_desc", "time_source", "device", "device_label", "channel", "artifact",
+             "event", "message", "user", "system", "source_path", "locator", "sha256", "device_ids")
+
+
+_DICT_KEYS = ("timestamp_desc", "time_source", "device", "device_label", "channel", "artifact", "event",
+              "user", "system", "source_path", "sha256")
+
+
+def _encode(rows: list[dict]) -> dict:
+    """Column-encode the timeline; repetitive columns become indexes into value tables."""
+    keys = list(_ROW_KEYS) + ["data"]
+    tables: dict[str, list] = {k: [] for k in _DICT_KEYS}
+    index: dict[str, dict] = {k: {} for k in _DICT_KEYS}
+    out_rows = []
+    for r in rows:
+        row = []
+        for k in keys:
+            v = r.get(k)
+            if k in index:
+                key = json.dumps(v, default=_jsonable)
+                if key not in index[k]:
+                    index[k][key] = len(tables[k])
+                    tables[k].append(v)
+                v = index[k][key]
+            row.append(v)
+        out_rows.append(row)
+    return {"keys": keys, "dict": tables, "rows": out_rows}
+
+
 def write_html(result: ScanResult, path: Path) -> Path:
-    timeline = [rec for obs, rec in iter_records(result) if obs.timestamp is not None]
-    data = json.dumps({"timeline": timeline}, default=_jsonable, ensure_ascii=False)
+    timeline = []
+    total = 0
+    for obs, rec in iter_records(result):
+        if obs.timestamp is None:
+            continue
+        total += 1
+        if len(timeline) < HTML_MAX_ROWS:
+            row = {k: rec[k] for k in _ROW_KEYS}
+            row["data"] = _compact(rec["data"])
+            timeline.append(row)
+    truncated = total - len(timeline)
+    data = json.dumps(_encode(timeline), default=_jsonable, ensure_ascii=False, separators=(",", ":"))
     data = data.replace("</", "<\\/")
     phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
     n_dev = len(phone_devs)
@@ -189,7 +246,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
 <main>
 <div class="grid">
   <div class="stat"><b>{n_dev}</b><span class="muted">phones ({n_conf} confirmed)</span></div>
-  <div class="stat"><b>{len(timeline)}</b><span class="muted">timed events</span></div>
+  <div class="stat"><b>{total}</b><span class="muted">timed events</span></div>
   <div class="stat"><b>{len(result.observations)}</b><span class="muted">observations</span></div>
   <div class="stat"><b>{len(result.systems)}</b><span class="muted">computers examined</span></div>
   <div class="stat"><b>{n_unrec}</b><span class="muted">files not parsed</span></div>
@@ -202,6 +259,9 @@ def write_html(result: ScanResult, path: Path) -> Path:
 <div class="filters"><input id="q" placeholder="Search all fields…"><select id="fdev"><option value="">All devices</option></select>
 <select id="fch"><option value="">All channels</option></select><select id="fart"><option value="">All artifacts</option></select></div>
 <div id="count" class="muted"></div>
+{f'<p class="note"><b>{truncated} later event(s) are not shown here</b> to keep this report usable; '
+ f'the complete timeline is in timeline.csv and timeline.jsonl. Long values are shortened in this view.</p>'
+ if truncated else '<p class="note">Long values are shortened in this view; full values are in timeline.jsonl.</p>'}
 <noscript><p class="note">JavaScript is off: open timeline.csv for the full timeline.</p></noscript>
 <table id="tl"><thead><tr><th>Time (UTC)</th><th>Meaning</th><th>Device</th><th>Channel</th><th>Event</th><th>Source</th></tr></thead><tbody></tbody></table>
 <button id="more">Show more</button>
