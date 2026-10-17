@@ -21,7 +21,7 @@ def test_helpers():
     raw = bytes([172, 20, 10, 1]) + struct.pack("<I", 6) + MAC
     assert _gateway_hardware(raw) == ("172.20.10.1", MAC.hex())
     # "Jane's iPhone" hex with nibbles swapped per byte
-    hexed = "Jane's iPhone".encode().hex()
+    hexed = b"Jane's iPhone".hex()
     swapped = "".join(hexed[i + 1] + hexed[i] for i in range(0, len(hexed), 2))
     assert _hint_to_ssid(swapped) == "Jane's iPhone"
 

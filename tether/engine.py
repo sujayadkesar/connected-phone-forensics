@@ -57,6 +57,13 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
     lib_logger.setLevel(logging.WARNING)
     lib_logger.propagate = False
     lib_logger.addHandler(capture)
+    try:
+        return _scan(input_path, plugin_ids, workdir, case, say, capture)
+    finally:
+        lib_logger.removeHandler(capture)
+
+
+def _scan(input_path, plugin_ids, workdir, case, say, capture) -> ScanResult:
     started = datetime.now(timezone.utc)
     registry = load_plugins()
     if plugin_ids:
@@ -98,7 +105,6 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
                                 "observations": len(ctx.observations),
                                 "files": len(ctx.coverage)})
 
-    lib_logger.removeHandler(capture)
     observations.sort(key=_sort_key)
     graph = build_graph(observations)
     say(f"correlated {len(observations)} observation(s) into {len(graph.devices)} device(s)")
