@@ -236,9 +236,60 @@ def _classify(fs: EvidenceFS) -> str | None:
     return None
 
 
+def _windows_details(fs: EvidenceFS) -> dict[str, str]:
+    """Computer name (SYSTEM) and Windows version (SOFTWARE), best effort."""
+    import logging
+
+    from .readers.registry import control_set_paths, open_hive
+
+    details: dict[str, str] = {}
+    logging.getLogger("regipy").setLevel(logging.CRITICAL)
+    system = fs.find("Windows/System32/config/SYSTEM")
+    if system and system.is_file():
+        try:
+            with open_hive(system) as h:
+                for cs in control_set_paths(h):
+                    k = h.key(f"{cs}\\Control\\ComputerName\\ComputerName")
+                    if k and k.get("ComputerName"):
+                        details["computer_name"] = str(k.get("ComputerName"))
+                        break
+        except Exception:  # noqa: BLE001 - details are best effort
+            pass
+    software = fs.find("Windows/System32/config/SOFTWARE")
+    if software and software.is_file():
+        try:
+            with open_hive(software) as h:
+                k = h.key("\\Microsoft\\Windows NT\\CurrentVersion")
+                if k:
+                    product = str(k.get("ProductName") or "").strip()
+                    build = k.get("CurrentBuild") or k.get("CurrentBuildNumber")
+                    # Windows 11 still reports "Windows 10" in ProductName; the build tells them apart.
+                    if product and build and str(build).isdigit() and int(build) >= 22000:
+                        product = product.replace("Windows 10", "Windows 11")
+                    parts = [product, str(k.get("DisplayVersion") or ""), f"build {build}" if build else ""]
+                    details["product"] = " ".join(p for p in parts if p).strip()
+        except Exception:  # noqa: BLE001
+            pass
+    return details
+
+
 def _system_details(os_name: str, fs: EvidenceFS) -> dict[str, str]:
     details: dict[str, str] = {}
+    if os_name == WINDOWS:
+        details.update(_windows_details(fs))
     if os_name == MACOS:
+        prefs = fs.find("Library/Preferences/SystemConfiguration/preferences.plist")
+        if prefs:
+            try:
+                with open(prefs, "rb") as f:
+                    v = plistlib.load(f)
+                sysinfo = v.get("System", {})
+                name = (sysinfo.get("System", {}).get("ComputerName")
+                        or sysinfo.get("Network", {}).get("HostNames", {}).get("LocalHostName"))
+                if name:
+                    details["computer_name"] = str(name)
+            except Exception:  # noqa: BLE001
+                pass
         p = fs.find("System/Library/CoreServices/SystemVersion.plist")
         if p:
             try:
@@ -249,6 +300,14 @@ def _system_details(os_name: str, fs: EvidenceFS) -> dict[str, str]:
             except Exception:  # noqa: BLE001 - details are best effort
                 pass
     elif os_name == LINUX:
+        hn = fs.find("etc/hostname")
+        if hn and hn.is_file():
+            try:
+                name = hn.read_text(errors="replace").strip().splitlines()[0].strip()
+                if name:
+                    details["computer_name"] = name
+            except (OSError, IndexError):
+                pass
         p = fs.find("etc/os-release")
         if p:
             try:
@@ -275,8 +334,15 @@ def discover_systems(path: Path | str, max_depth: int = 5) -> list[SystemRoot]:
         kind = _classify(fs)
         if kind:
             users = {WINDOWS: _windows_users, MACOS: _mac_users, LINUX: _linux_users}[kind](fs)
-            label = d.name if d != base else (base.name or str(base))
-            found.append(SystemRoot(kind, fs, label, users, _system_details(kind, fs)))
+            details = _system_details(kind, fs)
+            folder = d.name if d != base else (base.name or str(base))
+            # Collections often name the root after a drive ("C", "C%3A"); prefer the
+            # computer name recorded in the evidence, then the parent folder's name.
+            if re.fullmatch(r"[A-Za-z](%3A|:)?", folder) and d != base:
+                folder = f"{d.parent.name}/{folder}"
+            label = details.get("computer_name") or folder
+            details["root_folder"] = folder
+            found.append(SystemRoot(kind, fs, label, users, details))
             return
         if depth >= max_depth:
             return
@@ -288,4 +354,11 @@ def discover_systems(path: Path | str, max_depth: int = 5) -> list[SystemRoot]:
             visit(child, depth + 1)
 
     visit(base, 0)
+    # Two images of the same computer share a name; keep labels unique.
+    seen: dict[str, int] = {}
+    for sysroot in found:
+        n = seen.get(sysroot.label, 0)
+        seen[sysroot.label] = n + 1
+        if n:
+            sysroot.label = f"{sysroot.label} ({sysroot.details.get('root_folder', n + 1)})"
     return found

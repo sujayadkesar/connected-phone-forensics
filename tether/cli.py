@@ -28,6 +28,24 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_demo(args: argparse.Namespace) -> int:
+    from .demo import build_demo_evidence
+    from .engine import scan, stderr_progress
+    from .output import write_all
+
+    out = Path(args.output)
+    if out.exists() and any(out.iterdir()):
+        print(f"error: {out} is not empty", file=sys.stderr)
+        return 2
+    evidence = build_demo_evidence(out)
+    print(f"synthetic evidence written to {evidence}", file=sys.stderr)
+    result = scan(evidence, case={"case": "DEMO (synthetic data)", "examiner": ""},
+                  progress=stderr_progress)
+    written = write_all(result, out / "report")
+    print(f"open {written[-1]}", file=sys.stderr)
+    return 0
+
+
 def _cmd_plugins(args: argparse.Namespace) -> int:
     from .plugin import load_plugins
 
@@ -88,6 +106,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-html", action="store_true", help="skip the HTML report")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(func=_cmd_scan)
+
+    dm = sub.add_parser("demo", help="build a synthetic three-computer case and scan it")
+    dm.add_argument("output", type=Path, help="empty directory for the demo evidence and report")
+    dm.set_defaults(func=_cmd_demo)
 
     pl = sub.add_parser("plugins", help="list parsers")
     pl.add_argument("--json", action="store_true")

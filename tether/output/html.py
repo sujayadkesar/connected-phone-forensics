@@ -111,8 +111,12 @@ def _cards(result: ScanResult, devices) -> str:
             f"(<span class='mono'>{escape(r['locator'])}</span>)</li>" for r in d["merge_reasons"])
         pm = [m for m in matches if dev.id in m["devices"]]
         pm_html = "".join(
-            f"<li>{escape(' ↔ '.join(m['devices']))}: shared {escape(m['shared']['kind'])} "
-            f"<span class='mono'>{escape(m['shared']['value'])}</span> — {escape(m['note'])}</li>" for m in pm)
+            f"<li><a href='#{escape(next(x for x in m['devices'] if x != dev.id))}'>"
+            f"{escape(next(x for x in m['devices'] if x != dev.id))}</a> "
+            f"<b>{m['independent_signals']} independent signal{'s' if m['independent_signals'] > 1 else ''}</b><ul>"
+            + "".join(f"<li>{escape(sg['kind'])}: <span class='mono'>{escape(sg['value'])}</span> — "
+                      f"{escape(sg['note'])}</li>" for sg in m["signals"])
+            + "</ul></li>" for m in pm)
         out.append(f"""
 <section class="card" id="{escape(dev.id)}">
   <div class="card-head"><h3>{escape(dev.label)}</h3><span class="mono muted">{escape(dev.id)}</span>{badge}{os_badge}</div>
@@ -122,7 +126,7 @@ def _cards(result: ScanResult, devices) -> str:
   <table><thead><tr><th>Channel</th><th>First seen</th><th>Last seen</th><th>Records</th><th>Artifacts</th></tr></thead><tbody>{chans}</tbody></table>
   <p class="muted">Events: {events or '—'}</p>
   {"<details><summary>How these records were linked (" + str(len(d['merge_reasons'])) + ")</summary><ul>" + reasons + "</ul></details>" if reasons else ""}
-  {"<details open><summary>Possible matches with other devices</summary><ul>" + pm_html + "</ul></details>" if pm_html else ""}
+  {"<details open><summary>May be the same phone as (not merged; verify)</summary><ul>" + pm_html + "</ul></details>" if pm_html else ""}
 </section>""")
     return "".join(out)
 
@@ -165,7 +169,8 @@ def write_html(result: ScanResult, path: Path) -> Path:
     n_unrec = sum(1 for c in result.coverage if c.status in (ERROR, UNRECOGNISED))
     systems = "".join(
         f"<tr><td>{escape(s.label)}</td><td>{escape(s.os)}</td>"
-        f"<td>{escape(' '.join(v for v in s.details.values()) or '—')}</td>"
+        f"<td>{escape(' '.join(v for k, v in s.details.items() if k != 'root_folder' and v) or '—')}"
+        f"<div class='muted mono'>{escape(s.details.get('root_folder', ''))}</div></td>"
         f"<td>{escape(', '.join(u.name for u in s.users) or '—')}</td></tr>" for s in result.systems)
     case = "".join(f"<span>{escape(k)}: <b>{escape(v)}</b></span> · " for k, v in result.case.items() if v)
     warnings = "".join(

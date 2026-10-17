@@ -123,6 +123,77 @@ def _real_serial(instance: str) -> str | None:
     return instance
 
 
+def classify(c: _Container) -> tuple[str | None, str] | None:
+    if c.vid == APPLE_VID:
+        if is_ios_pid(c.pid) or "apple_mobile" in c.signals:
+            names = " ".join(c.names + c.models).lower()
+            return "ios", "tablet" if "ipad" in names else "phone"
+        return None
+    android_signal = {"adb", "android", "rndis"} & c.signals
+    if c.vid in PHONE_VENDORS:
+        return "android", "phone"
+    if c.vid in MIXED_VENDORS and (android_signal or "mtp" in c.signals):
+        return "android", "phone"
+    if android_signal:
+        return "android", "phone"
+    if "mtp" in c.signals:
+        return None if not c.names and not c.models else (None, "other")
+    return None
+
+
+def collect_containers(hive, cs: str) -> dict[str, _Container]:
+    """Group Enum\\USB device nodes (and their WPD nodes) by ContainerID."""
+    containers: dict[str, _Container] = defaultdict(_Container)
+    for dev_key in hive.subkeys(f"{cs}\\Enum\\USB"):
+        m = _VIDPID.search(dev_key.name)
+        if not m:
+            continue
+        vid, pid = m.group(1).upper(), m.group(2).upper()
+        is_parent = dev_key.name.upper() == f"VID_{vid}&PID_{pid}"
+        for inst in hive.subkeys(dev_key.path):
+            cid = (reg_text(inst.get("ContainerID")) or f"noc:{inst.path}").lower()
+            c = containers[cid]
+            c.keys.append(inst)
+            c.vid, c.pid = c.vid or vid, c.pid or pid
+            sig = _signals(inst)
+            c.signals |= sig
+            if is_parent and _real_serial(inst.name):
+                c.serial = inst.name
+            c.mfg = c.mfg or _strip_inf(reg_text(inst.get("Mfg")))
+            desc = _strip_inf(reg_text(inst.get("DeviceDesc")))
+            friendly = reg_text(inst.get("FriendlyName"))
+            if desc:
+                c.interfaces.append(desc)
+            # Only the media (MTP/PTP) interface describes the handset itself;
+            # other interfaces carry driver descriptions such as "Modem".
+            if not is_parent and {"mtp", "ptp"} & sig:
+                if desc and desc.lower() not in _GENERIC_NAMES:
+                    c.models.append(desc)
+                if friendly and friendly.lower() not in _GENERIC_NAMES:
+                    c.names.append(friendly)
+    # WPD nodes carry the friendly name Windows shows for MTP devices.
+    for wpd in hive.walk(f"{cs}\\Enum\\SWD\\WPDBUSENUM", max_depth=1):
+        cid = (reg_text(wpd.get("ContainerID")) or "").lower()
+        if cid and cid in containers:
+            containers[cid].keys.append(wpd)
+            fn = reg_text(wpd.get("FriendlyName"))
+            if fn and fn.lower() not in _GENERIC_NAMES:
+                containers[cid].names.append(fn)
+
+    return containers
+
+
+def phone_instance_index(hive, cs: str) -> dict[str, tuple[str | None, str]]:
+    """Map 'USB\\VID_..&PID_..\\<instance>' (upper case) to (phone_os, device_class) for phones/tablets."""
+    idx: dict[str, tuple[str | None, str]] = {}
+    for c in collect_containers(hive, cs).values():
+        kind = classify(c)
+        if kind and kind[1] in ("phone", "tablet"):
+            for k in c.keys:
+                idx[k.path.split("\\Enum\\", 1)[-1].upper()] = kind
+    return idx
+
+
 @register
 class WindowsUSBPhones(Plugin):
     id = "win_usb_phones"
@@ -146,45 +217,10 @@ class WindowsUSBPhones(Plugin):
             hive_rel = ctx.fs.rel(path)
             with ctx.file_scope(path) as n:
                 cs = control_sets[0] if control_sets else "\\ControlSet001"
-                containers: dict[str, _Container] = defaultdict(_Container)
-                for dev_key in hive.subkeys(f"{cs}\\Enum\\USB"):
-                    m = _VIDPID.search(dev_key.name)
-                    if not m:
-                        continue
-                    vid, pid = m.group(1).upper(), m.group(2).upper()
-                    is_parent = dev_key.name.upper() == f"VID_{vid}&PID_{pid}"
-                    for inst in hive.subkeys(dev_key.path):
-                        cid = (reg_text(inst.get("ContainerID")) or f"noc:{inst.path}").lower()
-                        c = containers[cid]
-                        c.keys.append(inst)
-                        c.vid, c.pid = c.vid or vid, c.pid or pid
-                        sig = _signals(inst)
-                        c.signals |= sig
-                        if is_parent and _real_serial(inst.name):
-                            c.serial = inst.name
-                        c.mfg = c.mfg or _strip_inf(reg_text(inst.get("Mfg")))
-                        desc = _strip_inf(reg_text(inst.get("DeviceDesc")))
-                        friendly = reg_text(inst.get("FriendlyName"))
-                        if desc:
-                            c.interfaces.append(desc)
-                        # Only the media (MTP/PTP) interface describes the handset itself;
-                        # other interfaces carry driver descriptions such as "Modem".
-                        if not is_parent and {"mtp", "ptp"} & sig:
-                            if desc and desc.lower() not in _GENERIC_NAMES:
-                                c.models.append(desc)
-                            if friendly and friendly.lower() not in _GENERIC_NAMES:
-                                c.names.append(friendly)
-                # WPD nodes carry the friendly name Windows shows for MTP devices.
-                for wpd in hive.walk(f"{cs}\\Enum\\SWD\\WPDBUSENUM", max_depth=1):
-                    cid = (reg_text(wpd.get("ContainerID")) or "").lower()
-                    if cid and cid in containers:
-                        containers[cid].keys.append(wpd)
-                        fn = reg_text(wpd.get("FriendlyName"))
-                        if fn and fn.lower() not in _GENERIC_NAMES:
-                            containers[cid].names.append(fn)
+                containers = collect_containers(hive, cs)
 
                 for cid, c in containers.items():
-                    kind = self._classify(c)
+                    kind = classify(c)
                     if kind is None:
                         continue
                     phone_os, device_class = kind
@@ -254,21 +290,3 @@ class WindowsUSBPhones(Plugin):
                         ))
                         emitted = 1
                     n[0] += emitted
-
-    @staticmethod
-    def _classify(c: _Container) -> tuple[str | None, str] | None:
-        if c.vid == APPLE_VID:
-            if is_ios_pid(c.pid) or "apple_mobile" in c.signals:
-                names = " ".join(c.names + c.models).lower()
-                return "ios", "tablet" if "ipad" in names else "phone"
-            return None
-        android_signal = {"adb", "android", "rndis"} & c.signals
-        if c.vid in PHONE_VENDORS:
-            return "android", "phone"
-        if c.vid in MIXED_VENDORS and (android_signal or "mtp" in c.signals):
-            return "android", "phone"
-        if android_signal:
-            return "android", "phone"
-        if "mtp" in c.signals:
-            return None if not c.names and not c.models else (None, "other")
-        return None

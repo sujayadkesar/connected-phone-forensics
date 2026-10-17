@@ -103,7 +103,7 @@ def test_outputs_written(tmp_path):
     rec = json.loads(lines[0])
     assert {"message", "datetime", "timestamp_desc"} <= set(rec)  # Timesketch required fields
     man = json.loads((tmp_path / "out" / "manifest.json").read_text())
-    assert "Windows/System32/config/SYSTEM" in man["evidence_files_sha256"]["C"]
+    assert "Windows/System32/config/SYSTEM" in man["evidence_files_sha256"][result.systems[0].label]
     html = (tmp_path / "out" / "report.html").read_text()
     assert "SM-G900V" in html and "<script" in html and "http" not in html.split("<main>")[0]
 

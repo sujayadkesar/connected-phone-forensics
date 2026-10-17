@@ -114,8 +114,9 @@ def test_discover_kape_and_velociraptor_layouts(tmp_path):
     (mac / "private" / "var" / "db").mkdir(parents=True)
     systems = discover_systems(tmp_path)
     kinds = sorted((s.os, s.label) for s in systems)
-    assert kinds == [("macos", "macdata"), ("windows", "C"), ("windows", "C%3A")]
-    win = next(s for s in systems if s.label == "C")
+    # Drive-letter roots are labelled with their parent folder when no computer name is recorded.
+    assert kinds == [("macos", "macdata"), ("windows", "auto/C%3A"), ("windows", "kape_out/C")]
+    win = next(s for s in systems if s.label == "kape_out/C")
     assert [u.name for u in win.users] == ["alice"]  # Public skipped
     mac_sys = next(s for s in systems if s.os == "macos")
     assert [u.name for u in mac_sys.users] == ["bob"]
@@ -188,8 +189,10 @@ def test_names_and_numbers_never_merge():
     ]
     g = build_graph(obs)
     assert len(g.devices) == 2
-    kinds = sorted(m["shared"]["kind"] for m in g.possible_matches)
-    assert kinds == ["device_name", "phone_number"]
+    assert len(g.possible_matches) == 1
+    m = g.possible_matches[0]
+    assert m["independent_signals"] == 2
+    assert sorted(s["kind"] for s in m["signals"]) == ["device_name", "phone_number"]
 
 
 def test_weak_only_records_are_unconfirmed_and_unattributed_kept():
@@ -198,3 +201,16 @@ def test_weak_only_records_are_unconfirmed_and_unattributed_kept():
     g = build_graph(obs)
     assert len(g.devices) == 1 and not g.devices[0].confirmed
     assert g.unattributed == [1]
+
+
+def test_mac_heuristics_suggest_but_never_merge():
+    obs = [
+        _obs((IdKind.UDID, "U1"), (IdKind.WIFI_MAC, "a4:c3:37:5e:10:2c")),
+        _obs((IdKind.BT_MAC, "a4:c3:37:5e:10:2b")),
+        _obs((IdKind.APP_DEVICE_ID, "wifi_ap_mac:6ac3e15e102b")),
+        _obs((IdKind.BT_MAC, "00:11:22:33:44:55")),
+    ]
+    g = build_graph(obs)
+    assert len(g.devices) == 4
+    kinds = sorted(s["kind"] for m in g.possible_matches for s in m["signals"])
+    assert kinds == ["adjacent_mac", "mac_suffix"]  # hotspot shares its suffix with the BT MAC only

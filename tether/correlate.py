@@ -272,6 +272,23 @@ def _weak_group_key(ids: list[Identifier]) -> str:
 
 
 def _possible_matches(devices: list[Device]) -> list[dict[str, Any]]:
+    """Device pairs that may be one phone, with every signal that suggests it.
+
+    Signals are grouped per pair; ``independent_signals`` counts distinct
+    signal kinds (a shared name and adjacent MACs are two independent hints).
+    """
+    by_pair: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for m in _raw_matches(devices):
+        by_pair[tuple(m["devices"])].append({**m["shared"], "note": m["note"]})
+    out = []
+    for pair, signals in sorted(by_pair.items()):
+        kinds = sorted({s["kind"] for s in signals})
+        out.append({"devices": list(pair), "signals": signals, "independent_signals": len(kinds)})
+    out.sort(key=lambda m: (-m["independent_signals"], m["devices"]))
+    return out
+
+
+def _raw_matches(devices: list[Device]) -> list[dict[str, Any]]:
     """Pairs of devices that share a weak or link identifier."""
     index: dict[tuple[str, str], list[str]] = defaultdict(list)
     for d in devices:
@@ -293,4 +310,56 @@ def _possible_matches(devices: list[Device]) -> list[dict[str, Any]]:
                              if kind in ("phone_number", "account", "iccid")
                              else "same device name; names are user-chosen and not unique"),
                 })
+    out.extend(_mac_matches(devices))
+    return out
+
+
+_MAC_ID_PREFIXES = ("wifi_ap_mac:",)
+
+
+def _device_macs(d: Device) -> list[tuple[str, int]]:
+    """(label, 48-bit value) for every MAC-address identifier of a device."""
+    macs = []
+    for i in d.identifiers:
+        value = None
+        if i.kind in (IdKind.BT_MAC, IdKind.WIFI_MAC):
+            value, label = i.value, i.kind.value
+        elif i.kind == IdKind.APP_DEVICE_ID and i.value.startswith(_MAC_ID_PREFIXES):
+            label, value = i.value.split(":", 1)
+        if value:
+            hexonly = value.replace(":", "").replace("-", "")
+            if len(hexonly) == 12 and all(c in "0123456789abcdefABCDEF" for c in hexonly):
+                macs.append((f"{label}={value}", int(hexonly, 16)))
+    return macs
+
+
+def _mac_matches(devices: list[Device]) -> list[dict[str, Any]]:
+    """Heuristic links between MAC addresses of different radios of one handset.
+
+    * Adjacent addresses (same OUI, differing by 1-2): vendors, Apple among
+      them, commonly assign consecutive addresses to a device's Wi-Fi and
+      Bluetooth radios.
+    * Same last three bytes, different first three: locally administered
+      addresses (e.g. a hotspot's BSSID) are often derived from the base
+      address by changing only the first byte(s).
+    Never merges; reported for the examiner to verify.
+    """
+    out = []
+    macs = {d.id: _device_macs(d) for d in devices}
+    ids = sorted(macs)
+    for a_i, a in enumerate(ids):
+        for b in ids[a_i + 1:]:
+            for la, va in macs[a]:
+                for lb, vb in macs[b]:
+                    same_oui = (va >> 24) == (vb >> 24)
+                    if same_oui and 0 < abs(va - vb) <= 2:
+                        out.append({"devices": [a, b], "shared": {"kind": "adjacent_mac", "value": f"{la} ~ {lb}"},
+                                    "note": "MAC addresses differ by "
+                                            f"{abs(va - vb)} within the same vendor prefix; vendors often assign "
+                                            "consecutive addresses to one handset's Wi-Fi and Bluetooth (heuristic)"})
+                    elif not same_oui and (va & 0xFFFFFF) == (vb & 0xFFFFFF):
+                        out.append({"devices": [a, b], "shared": {"kind": "mac_suffix", "value": f"{la} ~ {lb}"},
+                                    "note": "last three bytes of the MAC addresses match; locally administered "
+                                            "addresses such as hotspot BSSIDs are often derived from the device's "
+                                            "base address (heuristic)"})
     return out
