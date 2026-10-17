@@ -1,3 +1,7 @@
+import sys
+
+import pytest
+
 from tether.engine import scan
 
 INFO = """[General]
@@ -21,6 +25,7 @@ Version=5
 """
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="BlueZ paths contain ':' which Windows cannot store")
 def test_bluez_paired_and_cached(tmp_path):
     root = tmp_path / "ubuntu"
     (root / "etc").mkdir(parents=True)

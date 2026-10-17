@@ -58,6 +58,18 @@ def _cmd_docs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_validate(args: argparse.Namespace) -> int:
+    from .validate import render_markdown, validate
+
+    report = validate(args.truth, args.results)
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print(render_markdown(report))
+    s = report["summary"]
+    return 0 if s["expected"] and s["found"] == s["expected"] else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="tether",
@@ -84,6 +96,12 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("targets", help="print collection targets for the files Tether reads")
     t.add_argument("--format", choices=["list", "kape", "velociraptor"], default="list")
     t.set_defaults(func=_cmd_targets)
+
+    v = sub.add_parser("validate", help="score scan results against a ground-truth file")
+    v.add_argument("truth", type=Path, help="ground-truth JSON (see docs/VALIDATION.md)")
+    v.add_argument("results", type=Path, help="output directory of 'tether scan'")
+    v.add_argument("--json", action="store_true")
+    v.set_defaults(func=_cmd_validate)
 
     d = sub.add_parser("docs", help="generate the artifact reference (Markdown)")
     d.add_argument("-o", "--output", type=Path)
