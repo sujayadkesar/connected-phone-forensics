@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tether-dfir"
+dynamic = ["version"]
+description = "Recover smartphone evidence from the computers a phone was connected to."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Tether contributors" }]
+keywords = ["dfir", "forensics", "mobile-forensics", "incident-response", "iphone", "android", "phone-link"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Legal Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Security",
+    "Topic :: System :: Recovery Tools",
+]
+dependencies = [
+    "regipy>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4"]
+
+[project.scripts]
+tether = "tether.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "tether.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["tether*"]
+
+[tool.setuptools.package-data]
+tether = ["py.typed", "output/*.html", "output/*.css", "output/*.js"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
