@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ._synth.certs import make_cert_pem
+from ._synth.phonelink import build_phonelink_profile
 from ._synth.regf import DEVPROP_FILETIME, REG_BINARY, REG_MULTI_SZ, REG_QWORD, HiveBuilder
 
 UTC = timezone.utc
@@ -154,6 +155,10 @@ def _windows(root: Path) -> None:
     sw.value(home_prof, "DateCreated", _systemtime_local(datetime(2024, 11, 1, 9, 0, 0)), REG_BINARY)
     (cfg / "SOFTWARE").write_bytes(sw.build())
 
+    build_phonelink_profile(root / "Users", "alex", "9a6e2c1f-4b3d-4e5a-8f70-2d1c3b4a5e6f",
+                            phone_number="+14155550199",
+                            contacts=[("Jordan Lee", "+1 415 555 0177"), ("Sam Ortiz", "+1 415 555 0123")],
+                            base=datetime(2025, 10, 11, 19, 30, tzinfo=UTC))
     lock = root / "ProgramData" / "Apple" / "Lockdown"
     lock.mkdir(parents=True, exist_ok=True)
     with open(lock / f"{IPHONE_UDID}.plist", "wb") as f:

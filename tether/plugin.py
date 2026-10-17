@@ -103,11 +103,13 @@ def load_plugins() -> dict[str, type[Plugin]]:
 class Context:
     """Everything a plugin may use while it runs against one system."""
 
-    def __init__(self, plugin: Plugin, system: SystemRoot, workdir: Path | None = None):
+    def __init__(self, plugin: Plugin, system: SystemRoot, workdir: Path | None = None,
+                 export_dir: Path | None = None):
         self.plugin = plugin
         self.system = system
         self.fs = system.fs
         self.workdir = workdir
+        self.export_dir = export_dir
         self.observations: list[Observation] = []
         self.coverage: list[CoverageEntry] = []
         self.warnings: list[Warning_] = []
@@ -135,6 +137,10 @@ class Context:
     @contextmanager
     def sqlite(self, path: Path) -> Iterator[SafeDB]:
         self.fs.sha256(path)
+        for suffix in ("-wal", "-shm", "-journal"):  # sidecars are evidence too
+            side = Path(path).with_name(Path(path).name + suffix)
+            if side.is_file():
+                self.fs.sha256(side)
         with open_db(path, self.workdir) as db:
             yield db
 
@@ -154,6 +160,28 @@ class Context:
 
     def read_text(self, path: Path, encoding: str = "utf-8") -> str:
         return self.read_bytes(path).decode(encoding, errors="replace")
+
+    def export(self, name: str, data: bytes) -> dict[str, Any]:
+        """Save content recovered from evidence (e.g. a cached photo) for the examiner.
+
+        Files go to ``<export dir>/<system>/<plugin>/<name>``; returns the
+        relative path (None when exporting is off), SHA-256 and size so the
+        observation records exactly what was written.
+        """
+        import hashlib
+        import re as _re
+
+        digest = hashlib.sha256(data).hexdigest()
+        rel = None
+        if self.export_dir is not None:
+            safe_sys = _re.sub(r"[^A-Za-z0-9._-]+", "_", self.system.label)
+            parts = [_re.sub(r"[^A-Za-z0-9._ -]+", "_", p).strip(" .") or "_"
+                     for p in name.replace("\\", "/").split("/") if p not in ("", ".", "..")]
+            target = Path(self.export_dir, safe_sys, self.plugin.id, *parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            rel = Path(safe_sys, self.plugin.id, *parts).as_posix()
+        return {"exported_path": rel, "sha256": digest, "size": len(data)}
 
     # -- reporting -----------------------------------------------------------
 

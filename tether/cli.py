@@ -17,7 +17,8 @@ def _cmd_scan(args: argparse.Namespace) -> int:
     case = {"case": args.case or "", "examiner": args.examiner or ""}
     plugin_ids = [p.strip() for p in args.plugins.split(",")] if args.plugins else None
     result = scan(args.input, plugin_ids=plugin_ids, workdir=args.workdir, case=case,
-                  progress=None if args.quiet else stderr_progress)
+                  progress=None if args.quiet else stderr_progress,
+                  export_dir=None if args.no_export else Path(args.output) / "exports")
     if not result.systems:
         print(f"error: no Windows, macOS or Linux filesystem found under {args.input}", file=sys.stderr)
         return 2
@@ -40,7 +41,7 @@ def _cmd_demo(args: argparse.Namespace) -> int:
     evidence = build_demo_evidence(out)
     print(f"synthetic evidence written to {evidence}", file=sys.stderr)
     result = scan(evidence, case={"case": "DEMO (synthetic data)", "examiner": ""},
-                  progress=stderr_progress)
+                  progress=stderr_progress, export_dir=out / "report" / "exports")
     written = write_all(result, out / "report")
     print(f"open {written[-1]}", file=sys.stderr)
     return 0
@@ -104,6 +105,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--examiner", help="examiner name shown in the report")
     s.add_argument("--workdir", type=Path, help="directory for temporary copies (default: system temp)")
     s.add_argument("--no-html", action="store_true", help="skip the HTML report")
+    s.add_argument("--no-export", action="store_true",
+                   help="do not save recovered files (photos, attachments); hashes are still recorded")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(func=_cmd_scan)
 

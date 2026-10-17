@@ -50,7 +50,8 @@ def _sort_key(obs: Observation):
 
 def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
          workdir: Path | None = None, case: dict[str, str] | None = None,
-         progress: Callable[[str], None] | None = None) -> ScanResult:
+         progress: Callable[[str], None] | None = None,
+         export_dir: Path | None = None) -> ScanResult:
     say = progress or (lambda _msg: None)
     capture = _Capture()
     lib_logger = logging.getLogger("regipy")
@@ -58,12 +59,12 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
     lib_logger.propagate = False
     lib_logger.addHandler(capture)
     try:
-        return _scan(input_path, plugin_ids, workdir, case, say, capture)
+        return _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir)
     finally:
         lib_logger.removeHandler(capture)
 
 
-def _scan(input_path, plugin_ids, workdir, case, say, capture) -> ScanResult:
+def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir) -> ScanResult:
     started = datetime.now(timezone.utc)
     registry = load_plugins()
     if plugin_ids:
@@ -85,7 +86,7 @@ def _scan(input_path, plugin_ids, workdir, case, say, capture) -> ScanResult:
             if cls.os != system.os:
                 continue
             plugin: Plugin = cls()
-            ctx = Context(plugin, system, workdir)
+            ctx = Context(plugin, system, workdir, export_dir)
             try:
                 plugin.run(ctx)
             except Exception as exc:  # noqa: BLE001 - one plugin must not abort the scan
