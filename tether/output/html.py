@@ -246,7 +246,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
     n_unrec = sum(1 for c in result.coverage if c.status in (ERROR, UNRECOGNISED))
     systems = "".join(
         f"<tr><td>{escape(s.label)}</td><td>{escape(s.os)}</td>"
-        f"<td>{escape(' '.join(v for k, v in s.details.items() if k != 'root_folder' and v) or '—')}"
+        f"<td>{escape(' '.join(v for k, v in s.details.items() if k not in ('root_folder', 'computer_name') and v) or '—')}"
         f"<div class='muted mono'>{escape(s.details.get('root_folder', ''))}</div></td>"
         f"<td>{escape(', '.join(u.name for u in s.users) or '—')}</td></tr>" for s in result.systems)
     case = "".join(f"<span>{escape(k)}: <b>{escape(v)}</b></span> · " for k, v in result.case.items() if v)
@@ -260,7 +260,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
   <h1>Tether report</h1>
   <div class="muted">{case}Generated {_fmt(result.finished)} by Tether {escape(result.tool_version)} ·
   input <span class="mono">{escape(result.input_path)}</span></div>
-  <nav><a href="#devices">Devices</a><a href="#timeline">Timeline</a><a href="#coverage">Coverage</a>
+  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#timeline">Timeline</a><a href="#coverage">Coverage</a>
   <a href="#method">Method</a></nav>
 </header>
 <main>
