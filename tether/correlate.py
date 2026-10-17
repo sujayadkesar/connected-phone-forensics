@@ -72,6 +72,7 @@ class Device:
     confirmed: bool
     label: str = ""
     phone_os: str | None = None
+    device_class: str | None = None
     identifiers: dict[Identifier, set[str]] = field(default_factory=dict)
     channels: dict[str, ChannelSummary] = field(default_factory=dict)
     systems: set[str] = field(default_factory=set)
@@ -90,6 +91,7 @@ class Device:
             "label": self.label,
             "confirmed": self.confirmed,
             "phone_os": self.phone_os,
+            "device_class": self.device_class,
             "first_seen": iso(self.first_seen),
             "last_seen": iso(self.last_seen),
             "identifiers": [
@@ -138,6 +140,18 @@ def _infer_os(dev: Device, votes: Counter) -> str | None:
             return "ios"
         if i.kind in (IdKind.MODEL,) and i.value.lower().startswith(("iphone", "ipad", "ipod")):
             return "ios"
+    return None
+
+
+def _infer_class(dev: Device, votes: Counter) -> str | None:
+    # A device seen through a phone-only channel (backup, pairing, Phone Link...)
+    # is a phone or tablet even if one artifact classed it otherwise.
+    if votes:
+        if "phone" in votes:
+            return "phone"
+        return votes.most_common(1)[0][0]
+    if dev.phone_os:
+        return "phone"
     return None
 
 
@@ -197,6 +211,7 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
         dev = Device(id="", confirmed=confirmed)
         names: Counter = Counter()
         os_votes: Counter = Counter()
+        class_votes: Counter = Counter()
         for idx in idxs:
             obs = observations[idx]
             dev.observation_ids.append(idx)
@@ -206,6 +221,8 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
                     names[i.value] += 1
             if obs.phone_os:
                 os_votes[obs.phone_os] += 1
+            if obs.device_class:
+                class_votes[obs.device_class] += 1
             dev.channels.setdefault(obs.channel.value, ChannelSummary(obs.channel.value)).add(obs)
             if obs.system:
                 dev.systems.add(obs.system)
@@ -223,11 +240,12 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
                                  if a in members or b in members]
         dev.label = _label(dev, names)
         dev.phone_os = _infer_os(dev, os_votes)
+        dev.device_class = _infer_class(dev, class_votes)
         devices.append(dev)
 
-    # Stable ordering: confirmed first, then earliest first-seen, then label.
+    # Stable ordering: phones first, confirmed first, then earliest first-seen, then label.
     far = datetime.max.replace(tzinfo=None)
-    devices.sort(key=lambda d: (not d.confirmed,
+    devices.sort(key=lambda d: (d.device_class not in (None, "phone", "tablet"), not d.confirmed,
                                 d.first_seen.replace(tzinfo=None) if d.first_seen else far,
                                 d.label))
     assignment: dict[int, str] = {}

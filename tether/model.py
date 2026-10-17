@@ -181,6 +181,9 @@ class Observation:
     # are shown in the timeline but not used for a device's first/last seen.
     time_source: str = "artifact"
     phone_os: str | None = None        # "ios" | "android" when the artifact implies it
+    # What kind of device the record describes when the artifact says so:
+    # "phone", "tablet", "computer", "audio", "wearable", "peripheral", "other".
+    device_class: str | None = None
     user: str | None = None            # local account the artifact belongs to
     system: str | None = None          # label of the computer (system root) it was found on
 

@@ -43,6 +43,15 @@ _INFO_IDS = [
 ]
 
 
+def apple_device_class(product_type: str | None) -> str:
+    pt = (product_type or "").lower()
+    if pt.startswith("ipad"):
+        return "tablet"
+    if pt.startswith(("ipod", "watch", "appletv", "audioaccessory")):
+        return "other"
+    return "phone"
+
+
 def _load(ctx: Context, path: Path | None):
     if path is None or not path.is_file():
         return None
@@ -123,6 +132,7 @@ def _parse_backup(ctx: Context, folder: Path) -> None:
                 message=f"Local backup of {label}{enc}: {desc}",
                 channel=Channel.BACKUP, timestamp=ts, timestamp_desc=desc,
                 provenance=ctx.prov(src, locator), device_ids=ids, data=data, phone_os="ios",
+                device_class=apple_device_class(data["product_type"]),
             ))
             emitted += 1
         if not emitted:
@@ -131,6 +141,7 @@ def _parse_backup(ctx: Context, folder: Path) -> None:
                 message=f"Local backup of {label} (no backup date recorded)",
                 channel=Channel.BACKUP, provenance=ctx.prov(anchor, "folder"),
                 device_ids=ids, data=data, phone_os="ios",
+                device_class=apple_device_class(data["product_type"]),
             ))
             emitted = 1
         n[0] += emitted

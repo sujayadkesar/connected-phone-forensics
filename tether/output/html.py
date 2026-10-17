@@ -75,13 +75,25 @@ def _fmt(dt) -> str:
 
 
 def _device_cards(result: ScanResult) -> str:
+    phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
+    others = [d for d in result.graph.devices if d.device_class not in (None, "phone", "tablet")]
+    html = _cards(result, phones) or '<p class="note">No phones were identified in this evidence.</p>'
+    if others:
+        html += (f"<details><summary>Other devices ({len(others)}): headsets, computers, peripherals"
+                 f"</summary>{_cards(result, others)}</details>")
+    return html
+
+
+def _cards(result: ScanResult, devices) -> str:
     out = []
     matches = result.graph.possible_matches
-    for dev in result.graph.devices:
+    for dev in devices:
         d = dev.to_dict()
         badge = ('<span class="badge ok">confirmed</span>' if dev.confirmed
                  else '<span class="badge warn">unconfirmed · weak identifiers only</span>')
         os_badge = f'<span class="badge">{escape(dev.phone_os)}</span>' if dev.phone_os else ""
+        if dev.device_class:
+            os_badge += f'<span class="badge">{escape(dev.device_class)}</span>'
         ids = "".join(
             f"<tr><td>{escape(i['kind'])}</td><td class='mono'>{escape(i['value'])}</td>"
             f"<td>{escape(i['strength'])}</td><td class='mono'>{escape(', '.join(i['sources']))}</td></tr>"
@@ -110,8 +122,6 @@ def _device_cards(result: ScanResult) -> str:
   {"<details><summary>How these records were linked (" + str(len(d['merge_reasons'])) + ")</summary><ul>" + reasons + "</ul></details>" if reasons else ""}
   {"<details open><summary>Possible matches with other devices</summary><ul>" + pm_html + "</ul></details>" if pm_html else ""}
 </section>""")
-    if not out:
-        out.append('<p class="note">No phones were identified in this evidence.</p>')
     return "".join(out)
 
 
@@ -147,8 +157,9 @@ def write_html(result: ScanResult, path: Path) -> Path:
     timeline = [rec for obs, rec in iter_records(result) if obs.timestamp is not None]
     data = json.dumps({"timeline": timeline}, default=_jsonable, ensure_ascii=False)
     data = data.replace("</", "<\\/")
-    n_dev = len(result.graph.devices)
-    n_conf = sum(1 for d in result.graph.devices if d.confirmed)
+    phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
+    n_dev = len(phone_devs)
+    n_conf = sum(1 for d in phone_devs if d.confirmed)
     n_unrec = sum(1 for c in result.coverage if c.status in (ERROR, UNRECOGNISED))
     systems = "".join(
         f"<tr><td>{escape(s.label)}</td><td>{escape(s.os)}</td>"
