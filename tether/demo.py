@@ -76,7 +76,16 @@ def _windows(root: Path) -> None:
     cfg.mkdir(parents=True, exist_ok=True)
     home = root / "Users" / "alex"
     home.mkdir(parents=True, exist_ok=True)
-    (home / "NTUSER.DAT").write_bytes(b"regf")
+    nt = HiveBuilder(root_name="CsiTool-CreateHive-{00000000-0000-0000-0000-000000000000}")
+    dc = r"Software\Microsoft\Windows\CurrentVersion\TaskFlow\DeviceCache"
+    for key, name, make, model, dtype in (("RzV4dGVyblBpeGVsOA==", "Pixel 8", "Google", "Pixel 8", 8),):
+        nt.key(f"{dc}\\{key}", last_written=_ft(datetime(2025, 6, 14, 9, 5, tzinfo=UTC)))
+        for vname, v in (("DeviceName", name), ("DeviceMake", make), ("DeviceModel", model)):
+            nt.value(f"{dc}\\{key}", vname, v)
+        nt.value(f"{dc}\\{key}", "DeviceType", dtype)
+    nt.value(r"Software\Microsoft\Windows\CurrentVersion\Mobility", "CrossDeviceEnabled", 1)
+    nt.value(r"Software\Microsoft\Windows\CurrentVersion\Mobility", "PhoneLinkEnabled", 1)
+    (home / "NTUSER.DAT").write_bytes(nt.build())
 
     sy = HiveBuilder()
     sy.value("Select", "Current", 1)
