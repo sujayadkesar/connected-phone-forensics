@@ -214,3 +214,21 @@ def test_mac_heuristics_suggest_but_never_merge():
     assert len(g.devices) == 4
     kinds = sorted(s["kind"] for m in g.possible_matches for s in m["signals"])
     assert kinds == ["adjacent_mac", "mac_suffix"]  # hotspot shares its suffix with the BT MAC only
+
+
+def test_examiner_assertion_merges_and_is_explained(tmp_path):
+    import pytest as _pytest
+
+    from tether.demo import IPHONE_BT, IPHONE_UDID, build_demo_evidence
+    from tether.engine import parse_assertion, scan
+
+    with _pytest.raises(ValueError):
+        parse_assertion("device_name=Jane,udid=X")  # weak kinds cannot be asserted
+    ev = build_demo_evidence(tmp_path)
+    before = scan(ev)
+    after = scan(ev, assume_same=[f"udid={IPHONE_UDID},bt_mac={IPHONE_BT}"])
+    assert len(after.graph.devices) == len(before.graph.devices) - 1
+    merged = next(d for d in after.graph.devices if any(r["artifact"] == "examiner_assertion"
+                                                       for r in d.merge_reasons))
+    assert {"usb", "bluetooth"} <= set(merged.channels)
+    assert after.assertions == [[f"udid={IPHONE_UDID.replace('-', '')}", f"bt_mac={IPHONE_BT}"]]

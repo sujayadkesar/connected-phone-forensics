@@ -114,6 +114,7 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
              "users": [u.name for u in s.users]} for s in result.systems
         ],
         "plugins": result.plugins_run,
+        "examiner_assertions": result.assertions,
         "counts": {
             "observations": len(result.observations),
             "timed_observations": sum(1 for o in result.observations if o.timestamp),

@@ -191,6 +191,56 @@ def _mac(root: Path) -> None:
         plistlib.dump(_pair_record(datetime(2025, 5, 20, 19, 45, 2, tzinfo=UTC)), f)
     _backup(root / "Users" / "alex" / "Library" / "Application Support" / "MobileSync" / "Backup" / IPHONE_UDID,
             datetime(2025, 8, 11, 6, 15, 0, tzinfo=UTC), encrypted=False)
+    _mac_sync(root)
+
+
+def _sqlite(path: Path, script: str, rows: list[tuple[str, tuple]]) -> None:
+    import sqlite3
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    c = sqlite3.connect(path)
+    c.executescript(script)
+    for sql, params in rows:
+        c.execute(sql, params)
+    c.commit()
+    c.close()
+
+
+def _cocoa(dt: datetime, ns: bool = False) -> float | int:
+    s = (dt - datetime(2001, 1, 1, tzinfo=UTC)).total_seconds()
+    return int(s * 1e9) if ns else s
+
+
+def _mac_sync(root: Path) -> None:
+    lib = root / "Users" / "alex" / "Library"
+    site = "5E7D8C9B-3A2F-4C1D-9E8B-7A6F5D4C3B2A"
+    _sqlite(lib / "Biome" / "sync" / "sync.db", """
+        CREATE TABLE DevicePeer(device_identifier TEXT, name TEXT, platform INTEGER, model NUMERIC, me INTEGER,
+            last_sync_date INTEGER, ids_device_identifier TEXT);
+        CREATE TABLE AtomMergedLog(synced_at REAL, event_created_at REAL, stream TEXT, merge_result INTEGER,
+            owning_site_identifier TEXT, relayed_by_site_identifier TEXT, session_id TEXT, message_id TEXT);
+    """, [
+        ("INSERT INTO DevicePeer VALUES ('0C1D2E3F-AAAA-4BBB-8CCC-DDDDEEEEFFFF', '', 4, '24G84', 1, NULL, NULL)", ()),
+        ("INSERT INTO DevicePeer VALUES (?, ?, 2, '22B83', 0, ?, '6A5B4C3D-1111-2222-3333-444455556666')",
+         (site, IPHONE_NAME, int(datetime(2025, 10, 12, 7, 41, tzinfo=UTC).timestamp()))),
+        ("INSERT INTO AtomMergedLog VALUES (?, ?, 'App.InFocus', 3, ?, NULL, 's1', 'm1')",
+         (_cocoa(datetime(2025, 9, 14, 20, 5, tzinfo=UTC)), _cocoa(datetime(2025, 9, 14, 20, 4, tzinfo=UTC)), site)),
+        ("INSERT INTO AtomMergedLog VALUES (?, ?, 'App.InFocus', 3, ?, NULL, 's2', 'm2')",
+         (_cocoa(datetime(2025, 10, 12, 7, 41, tzinfo=UTC)), _cocoa(datetime(2025, 10, 12, 7, 40, tzinfo=UTC)), site)),
+    ])
+    _sqlite(lib / "Messages" / "chat.db", """
+        CREATE TABLE handle(ROWID INTEGER PRIMARY KEY, id TEXT, service TEXT);
+        CREATE TABLE message(ROWID INTEGER PRIMARY KEY, guid TEXT, text TEXT, attributedBody BLOB, handle_id INTEGER,
+            service TEXT, account TEXT, date INTEGER, date_read INTEGER, date_delivered INTEGER, is_from_me INTEGER,
+            destination_caller_id TEXT, service_center TEXT, cache_has_attachments INTEGER, date_edited INTEGER,
+            date_retracted INTEGER);
+    """, [
+        ("INSERT INTO handle VALUES (1, '+14155550177', 'SMS')", ()),
+        ("INSERT INTO message VALUES (1, 'A1', 'Meet at the dock at 9', NULL, 1, 'SMS', 'P:+14155550142', ?, 0, 0, 0,"
+         " '+14155550142', NULL, 0, 0, 0)", (_cocoa(datetime(2025, 10, 10, 18, 22, tzinfo=UTC), ns=True),)),
+        ("INSERT INTO message VALUES (2, 'A2', 'ok', NULL, 1, 'SMS', 'P:+14155550142', ?, 0, 0, 1,"
+         " '+14155550142', NULL, 0, 0, 0)", (_cocoa(datetime(2025, 10, 10, 18, 25, tzinfo=UTC), ns=True),)),
+    ])
 
 
 def _linux(root: Path) -> None:

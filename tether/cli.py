@@ -16,9 +16,14 @@ def _cmd_scan(args: argparse.Namespace) -> int:
 
     case = {"case": args.case or "", "examiner": args.examiner or ""}
     plugin_ids = [p.strip() for p in args.plugins.split(",")] if args.plugins else None
-    result = scan(args.input, plugin_ids=plugin_ids, workdir=args.workdir, case=case,
-                  progress=None if args.quiet else stderr_progress,
-                  export_dir=None if args.no_export else Path(args.output) / "exports")
+    try:
+        result = scan(args.input, plugin_ids=plugin_ids, workdir=args.workdir, case=case,
+                      progress=None if args.quiet else stderr_progress,
+                      export_dir=None if args.no_export else Path(args.output) / "exports",
+                      assume_same=args.assume_same)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     if not result.systems:
         print(f"error: no Windows, macOS or Linux filesystem found under {args.input}", file=sys.stderr)
         return 2
@@ -107,6 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-html", action="store_true", help="skip the HTML report")
     s.add_argument("--no-export", action="store_true",
                    help="do not save recovered files (photos, attachments); hashes are still recorded")
+    s.add_argument("--assume-same", action="append", default=[], metavar="KIND=VALUE,KIND=VALUE",
+                   help="record an examiner conclusion that these strong identifiers are one phone "
+                        "(e.g. udid=...,bt_mac=...); repeatable; listed in the report and manifest")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(func=_cmd_scan)
 

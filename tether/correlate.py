@@ -126,10 +126,42 @@ class DeviceGraph:
     def device(self, device_id: str) -> Device | None:
         return next((d for d in self.devices if d.id == device_id), None)
 
+    def candidate_groups(self) -> list[dict[str, Any]]:
+        """Connected groups of devices linked by possible matches (never merged).
+
+        Each group lists its members and the signals between them, strongest
+        first, so an examiner can decide whether they are one phone.
+        """
+        adj: dict[str, set[str]] = defaultdict(set)
+        for m in self.possible_matches:
+            a, b = m["devices"]
+            adj[a].add(b)
+            adj[b].add(a)
+        seen: set[str] = set()
+        groups = []
+        for start in sorted(adj):
+            if start in seen:
+                continue
+            stack, members = [start], set()
+            while stack:
+                d = stack.pop()
+                if d in members:
+                    continue
+                members.add(d)
+                stack.extend(adj[d] - members)
+            seen |= members
+            links = [m for m in self.possible_matches if set(m["devices"]) <= members]
+            groups.append({"devices": sorted(members), "links": links,
+                           "strongest_link": max(m["independent_signals"] for m in links)})
+        groups.sort(key=lambda g: (-g["strongest_link"], -len(g["devices"]), g["devices"]))
+        return groups
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "devices": [d.to_dict() for d in self.devices],
             "possible_matches": self.possible_matches,
+            "candidate_groups": [{"devices": g["devices"], "strongest_link": g["strongest_link"]}
+                                 for g in self.candidate_groups()],
             "unattributed_observations": len(self.unattributed),
         }
 
@@ -160,11 +192,20 @@ def _infer_class(dev: Device, votes: Counter) -> str | None:
 def _label(dev: Device, names: Counter) -> str:
     if names:
         return names.most_common(1)[0][0]
-    models = [i.value for i in dev.identifiers if i.kind == IdKind.MODEL]
+    models = sorted(i.value for i in dev.identifiers if i.kind == IdKind.MODEL)
     if models:
         return models[0]
+    numbers = sorted(i.value for i in dev.identifiers if i.kind == IdKind.PHONE_NUMBER)
+    if numbers:
+        return f"Phone line {numbers[0]}"
     strong = sorted((i for i in dev.identifiers if i.strength == Strength.STRONG), key=str)
-    return str(strong[0]) if strong else "unknown device"
+    if strong:
+        kind, _, value = strong[0].value.partition(":") if strong[0].kind == IdKind.APP_DEVICE_ID else ("", "", "")
+        if value:
+            return f"{kind} device {value[:13]}"
+        return str(strong[0])
+    accounts = sorted(i.value for i in dev.identifiers if i.kind == IdKind.ACCOUNT)
+    return f"Account {accounts[0]}" if accounts else "unknown device"
 
 
 def build_graph(observations: list[Observation]) -> DeviceGraph:

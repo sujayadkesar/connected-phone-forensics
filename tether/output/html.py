@@ -74,6 +74,26 @@ def _fmt(dt) -> str:
     return iso(dt)[:19].replace("T", " ") + " UTC" if dt else "—"
 
 
+def _candidate_groups(result: ScanResult) -> str:
+    groups = result.graph.candidate_groups()
+    if not groups:
+        return ""
+    labels = {d.id: d.label for d in result.graph.devices}
+    items = []
+    for g in groups:
+        members = ", ".join(f"<a href='#{escape(d)}'>{escape(d)}</a> {escape(labels.get(d, ''))}" for d in g["devices"])
+        why = "".join(
+            f"<li>{escape(' ↔ '.join(m['devices']))}: "
+            + "; ".join(f"{escape(sg['kind'])} <span class='mono'>{escape(sg['value'])}</span>" for sg in m["signals"])
+            + "</li>" for m in g["links"])
+        items.append(f"<li><b>{len(g['devices'])} records</b> (strongest link: {g['strongest_link']} independent "
+                     f"signal{'s' if g['strongest_link'] > 1 else ''}): {members}<ul>{why}</ul></li>")
+    return ("<h2 id='groups'>Records that may be the same phone</h2><p class='note'>These device records share names, "
+            "phone numbers or related MAC addresses but no identifier strong enough to merge them automatically. "
+            "Review the links; to record a conclusion, re-run with <span class='mono'>--assume-same</span>.</p><ul>"
+            + "".join(items) + "</ul>")
+
+
 def _device_cards(result: ScanResult) -> str:
     phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
     others = [d for d in result.graph.devices if d.device_class not in (None, "phone", "tablet")]
@@ -253,6 +273,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
 </div>
 <h2>Computers examined</h2>
 <table><thead><tr><th>Label</th><th>OS</th><th>Version</th><th>User profiles</th></tr></thead><tbody>{systems}</tbody></table>
+{_candidate_groups(result)}
 <h2 id="devices">Phones</h2>
 {_device_cards(result)}
 <h2 id="timeline">Timeline</h2>

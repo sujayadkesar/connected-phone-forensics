@@ -13,7 +13,7 @@ from pathlib import Path
 from . import __version__
 from .correlate import DeviceGraph, build_graph
 from .evidence import SystemRoot, discover_systems
-from .model import Observation
+from .model import Channel, Identifier, IdKind, Observation, Provenance, Strength
 from .plugin import ERROR, Context, CoverageEntry, Plugin, Warning_, load_plugins
 
 
@@ -30,6 +30,28 @@ class ScanResult:
     plugins_run: list[dict]
     tool_version: str = __version__
     case: dict[str, str] = field(default_factory=dict)
+    assertions: list[list[str]] = field(default_factory=list)
+
+
+def parse_assertion(text: str) -> list[Identifier]:
+    """'udid=00008120...,bt_mac=a4:c3:...' -> identifiers; only strong kinds may be asserted."""
+    ids = []
+    for part in [p.strip() for p in text.split(",") if p.strip()]:
+        kind, sep, value = part.partition("=")
+        if not sep or not value:
+            raise ValueError(f"expected KIND=VALUE, got {part!r}")
+        try:
+            k = IdKind(kind.strip())
+        except ValueError as exc:
+            raise ValueError(f"unknown identifier kind {kind!r}") from exc
+        ident_ = Identifier(k, value.strip())
+        if ident_.strength != Strength.STRONG:
+            raise ValueError(f"{kind} is not a strong identifier and cannot be asserted; use udid, serial, imei, "
+                             "bt_mac, wifi_mac, usb_serial or app_device_id")
+        ids.append(ident_)
+    if len(ids) < 2:
+        raise ValueError("an assertion needs at least two identifiers")
+    return ids
 
 
 class _Capture(logging.Handler):
@@ -51,7 +73,7 @@ def _sort_key(obs: Observation):
 def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
          workdir: Path | None = None, case: dict[str, str] | None = None,
          progress: Callable[[str], None] | None = None,
-         export_dir: Path | None = None) -> ScanResult:
+         export_dir: Path | None = None, assume_same: list[str] | None = None) -> ScanResult:
     say = progress or (lambda _msg: None)
     capture = _Capture()
     lib_logger = logging.getLogger("regipy")
@@ -59,12 +81,14 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
     lib_logger.propagate = False
     lib_logger.addHandler(capture)
     try:
-        return _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir)
+        result = _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same or [])
+        return result
     finally:
         lib_logger.removeHandler(capture)
 
 
-def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir) -> ScanResult:
+def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same) -> ScanResult:
+    asserted = [parse_assertion(a) for a in assume_same]  # validate before any work
     started = datetime.now(timezone.utc)
     registry = load_plugins()
     if plugin_ids:
@@ -106,6 +130,13 @@ def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir) -> Sc
                                 "observations": len(ctx.observations),
                                 "files": len(ctx.coverage)})
 
+    for text, ids in zip(assume_same, asserted, strict=True):
+        observations.append(Observation(
+            artifact="examiner_assertion", event="examiner_linked",
+            message="Examiner asserted these identifiers belong to one phone: " + ", ".join(map(str, ids)),
+            channel=Channel.OTHER, provenance=Provenance("(examiner)", f"--assume-same {text}", "examiner"),
+            device_ids=ids, data={"assertion": text, "examiner": (case or {}).get("examiner")},
+        ))
     observations.sort(key=_sort_key)
     graph = build_graph(observations)
     say(f"correlated {len(observations)} observation(s) into {len(graph.devices)} device(s)")
@@ -113,7 +144,7 @@ def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir) -> Sc
         input_path=str(Path(input_path).resolve()), started=started,
         finished=datetime.now(timezone.utc), systems=systems, observations=observations,
         coverage=coverage, warnings=warnings, graph=graph, plugins_run=plugins_run,
-        case=case or {},
+        case=case or {}, assertions=[[str(i) for i in ids] for ids in asserted],
     )
 
 
