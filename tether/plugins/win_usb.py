@@ -84,7 +84,10 @@ def _signals(key: RegKey) -> set[str]:
         out.add("ptp")
     if "CLASS_FF&SUBCLASS_42&PROT_01" in text or "ADB" in text:
         out.add("adb")
-    if "MS_COMP_RNDIS" in text or "CLASS_E0" in text or "RNDIS" in text:
+    # RNDIS tethering is class E0/01/03 or EF/04/01. Plain class E0 is any wireless
+    # controller: E0/01/01 is a Bluetooth radio (seen on a real VMware hive).
+    if ("MS_COMP_RNDIS" in text or "CLASS_E0&SUBCLASS_01&PROT_03" in text
+            or "CLASS_EF&SUBCLASS_04&PROT_01" in text or "RNDIS" in text):
         out.add("rndis")
     if "ANDROID" in text:
         out.add("android")

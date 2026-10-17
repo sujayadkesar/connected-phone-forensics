@@ -32,6 +32,17 @@ class ScanResult:
     case: dict[str, str] = field(default_factory=dict)
 
 
+class _Capture(logging.Handler):
+    """Collect warnings from parsing libraries so they reach the report, not the console."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.records: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(f"{record.name}: {record.getMessage()}")
+
+
 def _sort_key(obs: Observation):
     ts = obs.timestamp
     return (ts is None, ts.timestamp() if ts else 0.0, obs.artifact, obs.provenance.locator)
@@ -41,7 +52,11 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
          workdir: Path | None = None, case: dict[str, str] | None = None,
          progress: Callable[[str], None] | None = None) -> ScanResult:
     say = progress or (lambda _msg: None)
-    logging.getLogger("regipy").setLevel(logging.ERROR)
+    capture = _Capture()
+    lib_logger = logging.getLogger("regipy")
+    lib_logger.setLevel(logging.WARNING)
+    lib_logger.propagate = False
+    lib_logger.addHandler(capture)
     started = datetime.now(timezone.utc)
     registry = load_plugins()
     if plugin_ids:
@@ -70,6 +85,9 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
                 ctx.warn(f"plugin crashed: {type(exc).__name__}: {exc}\n{traceback.format_exc(limit=5)}")
                 ctx.coverage.append(CoverageEntry(plugin.id, system.label, "", ERROR,
                                                   note=f"plugin crashed: {exc}"))
+            for msg in dict.fromkeys(capture.records):
+                ctx.warn(f"library warning: {msg}")
+            capture.records.clear()
             observations.extend(ctx.observations)
             coverage.extend(ctx.coverage)
             warnings.extend(ctx.warnings)
@@ -80,6 +98,7 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
                                 "observations": len(ctx.observations),
                                 "files": len(ctx.coverage)})
 
+    lib_logger.removeHandler(capture)
     observations.sort(key=_sort_key)
     graph = build_graph(observations)
     say(f"correlated {len(observations)} observation(s) into {len(graph.devices)} device(s)")

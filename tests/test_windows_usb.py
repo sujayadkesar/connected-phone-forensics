@@ -52,6 +52,12 @@ def _hive(path):
     h.value(ip, "DeviceDesc", "Apple Mobile Device USB Composite Device")
     h.value(ip, "ContainerID", "{11111111-2222-3333-4444-555555555555}")
     _times(h, ip, T_INSTALL, T_ARRIVE, T_REMOVE)
+    # A (VMware) Bluetooth radio: USB class E0/01/01 is not RNDIS tethering. Must be ignored.
+    bt = f"{USB}\\VID_0E0F&PID_0008\\000650268328"
+    h.value(bt, "DeviceDesc", "Generic Bluetooth Adapter")
+    h.value(bt, "Service", "BTHUSB")
+    h.value(bt, "CompatibleIDs", ["USB\\Class_E0&SubClass_01&Prot_01", "USB\\Class_E0"], REG_MULTI_SZ)
+    h.value(bt, "ContainerID", "{2cbad689-8dc0-543b-a46f-dad20d391c7b}")
     # An Apple keyboard and a Samsung SSD: must be ignored.
     h.value(f"{USB}\\VID_05AC&PID_024F\\5&abc&0&1", "DeviceDesc", "USB Input Device")
     h.value(f"{USB}\\VID_04E8&PID_61F5\\S5SVNF0R123456", "DeviceDesc", "USB Mass Storage Device")

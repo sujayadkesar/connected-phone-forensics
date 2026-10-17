@@ -43,6 +43,17 @@ def software_hive(ctx: Context) -> Iterator[tuple[Hive, Path] | None]:
         yield h, p
 
 
+def windows_timezone(hive: Hive, control_sets: list[str]):
+    """The evidence system's timezone, or None if the key is missing."""
+    from ..wintz import WindowsTimezone
+
+    for cs in control_sets:
+        k = hive.key(f"{cs}\\Control\\TimeZoneInformation")
+        if k is not None:
+            return WindowsTimezone.from_key(k)
+    return None
+
+
 def reg_time(value: Any) -> datetime | None:
     """A registry value holding a FILETIME as QWORD, 8 bytes, or a decoded datetime."""
     if isinstance(value, datetime):
