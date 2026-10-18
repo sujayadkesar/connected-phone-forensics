@@ -1,0 +1,43 @@
+name: Bug report
+description: Something is wrong, missing or crashes
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never attach real case data or personal data. Reproduce with synthetic data or the demo case if you can.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected and what you saw instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`cpf --version`, or the version shown in the app's sidebar"
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: How you ran it
+      options:
+        - Desktop app (Windows exe)
+        - Command line (Windows exe)
+        - Installed with pip
+    validations:
+      required: true
+  - type: input
+    id: evidence
+    attributes:
+      label: Evidence type
+      description: "e.g. mounted E01 of Windows 11, KAPE collection, macOS Data volume, UAC tarball"
+  - type: textarea
+    id: details
+    attributes:
+      label: Error message or warnings
+      description: The Issues page in the app, or the warnings in manifest.json.
+      render: text

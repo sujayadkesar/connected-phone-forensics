@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Connected Phone Forensics"
+abstract: >-
+  Recovers smartphone evidence (USB, Bluetooth, hotspot, Phone Link, iPhone pairing and backups,
+  synced messages and calls) from the Windows, macOS and Linux computers a phone was connected to,
+  and correlates it into devices with per-record provenance.
+type: software
+authors:
+  - alias: sujayadkesar
+license: MIT
+version: 0.1.0
+date-released: "2026-10-18"
+repository-code: "https://github.com/sujayadkesar/connected-phone-forensics"
+keywords:
+  - digital forensics
+  - mobile forensics
+  - incident response
+  - DFIR

@@ -1,0 +1,30 @@
+name: New artifact or parser
+description: A place where phones leave traces that is not parsed yet
+labels: ["parser"]
+body:
+  - type: input
+    id: artifact
+    attributes:
+      label: Artifact
+      description: "File or registry path, e.g. Users/*/AppData/Local/Packages/.../file.db"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Computer
+      options: [Windows, macOS, Linux]
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What it shows about the phone
+      description: Identifiers, times, content; and how the phone gets there (USB, Bluetooth, an app...).
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: References
+      description: Public research, blog posts, open-source parsers, sample data.
