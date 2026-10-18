@@ -25,12 +25,44 @@ LINUX = "linux"
 
 _HASH_CHUNK = 1024 * 1024
 
+_WIN_EXTENDED = "\\\\?\\"
+_WIN_EXTENDED_UNC = "\\\\?\\UNC\\"
+
+
+def long_path(path: Path | str) -> Path:
+    """``path`` made absolute and, on Windows, in extended-length form (``\\\\?\\C:\\...``).
+
+    Without LongPathsEnabled, Windows refuses paths over 260 characters, and a
+    Phone Link database below a case folder is easily that deep: the file then
+    looks missing. Paths joined below an extended-length root keep the prefix,
+    so every later open, listing and copy of them works.
+    """
+    p = Path(path).resolve()
+    if os.name != "nt":
+        return p
+    s = str(p)
+    if s.startswith((_WIN_EXTENDED, "\\\\.\\")):
+        return p
+    if s.startswith("\\\\"):  # \\server\share\... -> \\?\UNC\server\share\...
+        return Path(_WIN_EXTENDED_UNC + s[2:])
+    return Path(_WIN_EXTENDED + s)
+
+
+def display_path(path: Path | str) -> str:
+    """``path`` as text for reports, without the Windows extended-length prefix."""
+    s = str(path)
+    if s.startswith(_WIN_EXTENDED_UNC):
+        return "\\\\" + s[len(_WIN_EXTENDED_UNC):]
+    if s.startswith(_WIN_EXTENDED):
+        return s[len(_WIN_EXTENDED):]
+    return s
+
 
 class EvidenceFS:
     """A read-only, case-insensitive view of a directory tree."""
 
     def __init__(self, root: Path | str):
-        self.root = Path(root).resolve()
+        self.root = long_path(root)
         if not self.root.is_dir():
             raise NotADirectoryError(self.root)
         self._hashes: dict[Path, str] = {}
@@ -128,7 +160,7 @@ class EvidenceFS:
         hit = self._rel.get(p)
         if hit is None:
             try:
-                hit = p.resolve().relative_to(self.root).as_posix()
+                hit = long_path(p).relative_to(self.root).as_posix()
             except ValueError:
                 hit = p.as_posix()
             self._rel[p] = hit
@@ -331,7 +363,7 @@ def discover_systems(path: Path | str, max_depth: int = 5) -> list[SystemRoot]:
     Velociraptor collections (``uploads/auto/C%3A``) and UAC (``[root]``) by
     searching a few levels down for something that looks like a system root.
     """
-    base = Path(path).resolve()
+    base = long_path(path)
     found: list[SystemRoot] = []
 
     def visit(d: Path, depth: int) -> None:
@@ -340,7 +372,7 @@ def discover_systems(path: Path | str, max_depth: int = 5) -> list[SystemRoot]:
         if kind:
             users = {WINDOWS: _windows_users, MACOS: _mac_users, LINUX: _linux_users}[kind](fs)
             details = _system_details(kind, fs)
-            folder = d.name if d != base else (base.name or str(base))
+            folder = d.name if d != base else (base.name or display_path(base))
             # Collections often name the root after a drive ("C", "C%3A"); prefer the
             # computer name recorded in the evidence, then the parent folder's name.
             if re.fullmatch(r"[A-Za-z](%3A|:)?", folder) and d != base:

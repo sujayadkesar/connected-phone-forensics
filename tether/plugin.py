@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from .evidence import SystemRoot
+from .evidence import SystemRoot, long_path
 from .model import Channel, Observation, Provenance, Validation
 from .readers import plist as plistreader
 from .readers.registry import Hive, open_hive
@@ -180,7 +180,7 @@ class Context:
             safe_sys = re.sub(r"[^A-Za-z0-9._-]+", "_", self.system.label)
             parts = [re.sub(r"[^A-Za-z0-9._ -]+", "_", p).strip(" .")[:120] or "_"
                      for p in name.replace("\\", "/").split("/") if p not in ("", ".", "..")]
-            target = Path(self.export_dir, safe_sys, self.plugin.id, *parts)
+            target = Path(long_path(self.export_dir), safe_sys, self.plugin.id, *parts)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)
             rel = Path(safe_sys, self.plugin.id, *parts).as_posix()

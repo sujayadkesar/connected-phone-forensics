@@ -8,6 +8,7 @@ UDID and Bluetooth address. Every byte is synthetic.
 
 from __future__ import annotations
 
+import os
 import plistlib
 import struct
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from pathlib import Path
 from ._synth.certs import make_cert_pem
 from ._synth.phonelink import build_phonelink_profile
 from ._synth.regf import DEVPROP_FILETIME, REG_BINARY, REG_MULTI_SZ, REG_QWORD, HiveBuilder
+from .evidence import display_path, long_path
 
 UTC = timezone.utc
 IPHONE_UDID = "00008120-001A2B3C4D5E801E"
@@ -259,8 +261,11 @@ def _linux(root: Path) -> None:
     (root / "home" / "alex").mkdir(parents=True, exist_ok=True)
     adapter = "00:1A:7D:DA:71:13"
     bt = root / "var" / "lib" / "bluetooth" / adapter
-    for mac, name, cls, vendor in ((IPHONE_BT.upper(), IPHONE_NAME, "0x7a020c", 76),
-                                   (PIXEL_BT.upper(), "Pixel 8", "0x5a020c", 224)):
+    # BlueZ names folders by MAC address; Windows cannot store ':' in a name, so the
+    # demo's Linux Bluetooth pairings exist only when it is built on macOS or Linux.
+    pairings = () if os.name == "nt" else ((IPHONE_BT.upper(), IPHONE_NAME, "0x7a020c", 76),
+                                           (PIXEL_BT.upper(), "Pixel 8", "0x5a020c", 224))
+    for mac, name, cls, vendor in pairings:
         d = bt / mac
         d.mkdir(parents=True, exist_ok=True)
         (d / "info").write_text(
@@ -279,8 +284,8 @@ def _linux(root: Path) -> None:
 
 def build_demo_evidence(base: Path) -> Path:
     """Create the synthetic evidence tree; returns its root."""
-    ev = Path(base) / "evidence"
+    ev = long_path(base) / "evidence"  # the Phone Link profile alone is ~200 characters deep
     _windows(ev / "ALEX-LAPTOP" / "C")
     _mac(ev / "ALEX-MACBOOK")
     _linux(ev / "ALEX-DESKTOP")
-    return ev
+    return Path(display_path(ev))

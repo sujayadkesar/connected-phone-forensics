@@ -1,6 +1,9 @@
 import plistlib
 import sqlite3
+import sys
 from datetime import datetime, timezone
+
+import pytest
 
 from tether.engine import scan
 
@@ -19,6 +22,7 @@ def _base(tmp_path):
     return root
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="DHCP lease names contain ':' which Windows cannot store")
 def test_mac_hotspot_known_networks_and_lease(tmp_path):
     root = _base(tmp_path)
     with open(root / "Library" / "Preferences" / "com.apple.wifi.known-networks.plist", "wb") as f:

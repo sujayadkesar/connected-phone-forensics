@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from ..engine import ScanResult
+from ..evidence import display_path
 from ..model import Observation
 from ..timeutil import iso
 
@@ -126,7 +127,7 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
         "started": iso(result.started),
         "finished": iso(result.finished),
         "systems": [
-            {"label": s.label, "os": s.os, "root": str(s.fs.root), "details": s.details,
+            {"label": s.label, "os": s.os, "root": display_path(s.fs.root), "details": s.details,
              "users": [u.name for u in s.users]} for s in result.systems
         ],
         "plugins": result.plugins_run,

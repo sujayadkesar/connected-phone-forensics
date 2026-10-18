@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.4"]
+dev = ["pytest>=7", "ruff>=0.4", "tzdata; sys_platform == 'win32'"]
 
 [project.scripts]
 tether = "tether.cli:main"

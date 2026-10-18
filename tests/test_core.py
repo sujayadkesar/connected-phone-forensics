@@ -6,7 +6,7 @@ import pytest
 
 from tether import timeutil
 from tether.correlate import build_graph
-from tether.evidence import EvidenceFS, discover_systems
+from tether.evidence import EvidenceFS, discover_systems, display_path, long_path
 from tether.model import Channel, Identifier, IdKind, Observation, Provenance, ident, normalize
 from tether.readers.sqlite import open_db
 
@@ -97,6 +97,24 @@ def test_case_insensitive_glob(tmp_path):
     assert fs.files("Users/*/AppData/Local/*.db")
     assert fs.files("Users/Bob/**/phone.db") == []
 
+
+
+def test_reads_evidence_deeper_than_windows_max_path(tmp_path):
+    # Without LongPathsEnabled, Windows refuses paths over 260 characters. A Phone Link
+    # database below a case folder is that deep; it must be found and read, not look missing.
+    deep = long_path(tmp_path).joinpath("case", "C", "Users", "alex", *["x" * 60] * 5)
+    deep.mkdir(parents=True)
+    (deep / "phone.db").write_bytes(b"data")
+    (long_path(tmp_path) / "case" / "C" / "Users" / "alex" / "NTUSER.DAT").write_bytes(b"regf")
+    fs = EvidenceFS(tmp_path / "case" / "C")
+    hit = fs.find("users/alex/**/phone.db")
+    assert hit is not None and len(display_path(hit)) > 300
+    assert fs.read_bytes(hit) == b"data"
+    assert fs.sha256(hit) == hashlib.sha256(b"data").hexdigest()
+    assert fs.rel(hit) == "Users/alex/" + "/".join(["x" * 60] * 5) + "/phone.db"
+    assert display_path(fs.root) == str((tmp_path / "case" / "C").resolve())
+    (sysroot,) = discover_systems(tmp_path / "case")
+    assert [u.name for u in sysroot.users] == ["alex"]
 
 def _make_windows(root):
     (root / "Windows" / "System32" / "config").mkdir(parents=True)
