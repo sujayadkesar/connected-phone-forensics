@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from connected_phone_forensics.engine import scan
 from connected_phone_forensics.plugins.kdeconnect import _identity_created
 from tests.fixtures.certs import make_cert_pem
@@ -80,3 +82,34 @@ def test_linux_kdeconnect(tmp_path):
     assert events["kdeconnect_identity_created"].timestamp == datetime(2025, 3, 14, 22, 0, tzinfo=UTC)
     dev = result.graph.devices[0]
     assert dev.label == "Pixel 8" and dev.confirmed
+
+
+
+def _windows_root(root):
+    (root / "Windows" / "System32" / "config").mkdir(parents=True)
+    (root / "Users" / "sam").mkdir(parents=True)
+    (root / "Users" / "sam" / "NTUSER.DAT").write_bytes(b"regf")
+    return root / "Users" / "sam" / "AppData" / "Local" / "kdeconnect"
+
+
+def _mac_root(root):
+    (root / "Library" / "Preferences").mkdir(parents=True)
+    (root / "private" / "var" / "db").mkdir(parents=True)
+    (root / "Users" / "sam" / "Library").mkdir(parents=True)
+    return root / "Users" / "sam" / "Library" / "Preferences" / "kdeconnect"
+
+
+@pytest.mark.parametrize("plugin_id, make_root", [("win_kdeconnect", _windows_root),
+                                                  ("mac_kdeconnect", _mac_root)])
+def test_kdeconnect_on_windows_and_macos(tmp_path, plugin_id, make_root):
+    # Same files as on Linux, under each platform's own settings folder.
+    kc = make_root(tmp_path / "pc")
+    (kc / "a1b2c3d4_e5f6_4a1b_9c3d_e5f6a7b8c9d0").mkdir(parents=True)
+    (kc / "config").write_text("[General]\nname=sam-pc\n")
+    cert = make_cert_pem(datetime(2024, 3, 14, 22, 0), datetime(2035, 3, 14, 22, 0),
+                         cn="a1b2c3d4_e5f6_4a1b_9c3d_e5f6a7b8c9d0")
+    (kc / "trusted_devices").write_text(_trusted(cert))
+    result = scan(tmp_path, plugin_ids=[plugin_id])
+    paired = next(o for o in result.observations if o.event == "kdeconnect_paired")
+    assert paired.user == "sam" and paired.data["this_computer_name"] == "sam-pc"
+    assert result.graph.devices[0].label == "Pixel 8"
