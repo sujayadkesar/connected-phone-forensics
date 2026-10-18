@@ -232,3 +232,38 @@ def test_examiner_assertion_merges_and_is_explained(tmp_path):
                                                        for r in d.merge_reasons))
     assert {"usb", "bluetooth"} <= set(merged.channels)
     assert after.assertions == [[f"udid={IPHONE_UDID.replace('-', '')}", f"bt_mac={IPHONE_BT}"]]
+
+
+def test_phone_numbers_match_across_formats_and_sim_is_one_signal():
+    # "+1 (415) 555-0142" (iPhone backup) and "4155550142" (a national-format export) are one line;
+    # a shared ICCID describes the same SIM, so together they are one independent signal, not two.
+    obs = [
+        _obs((IdKind.SERIAL, "S1"), (IdKind.PHONE_NUMBER, "+1 (415) 555-0142"), (IdKind.ICCID, "8901260123456789012")),
+        _obs((IdKind.SERIAL, "S2"), (IdKind.PHONE_NUMBER, "4155550142"), (IdKind.ICCID, "89 0126 0123 4567 89012")),
+    ]
+    g = build_graph(obs)
+    assert len(g.devices) == 2
+    (m,) = g.possible_matches
+    assert sorted(s["kind"] for s in m["signals"]) == ["iccid", "phone_number"]
+    assert m["independent_signals"] == 1
+
+
+def test_x509_utctime_pivot_and_offsets():
+    from tether.readers.x509 import _time
+
+    # RFC 5280: YY >= 50 is 19YY, else 20YY. Python's %y pivots at 69 instead, so 50-68 differ.
+    assert _time(0x17, b"500101000000Z").year == 1950
+    assert _time(0x17, b"550101000000Z").year == 1955  # %y would say 2055
+    assert _time(0x17, b"491231235959Z").year == 2049
+    assert _time(0x18, b"20250101120000+0530") == datetime(2025, 1, 1, 6, 30, tzinfo=UTC)
+    assert _time(0x17, b"garbage") is None
+
+
+def test_csv_cells_cannot_become_formulas():
+    from tether.output.structured import csv_safe
+
+    assert csv_safe("=HYPERLINK(\"http://x\")") == "'=HYPERLINK(\"http://x\")"
+    assert csv_safe("@SUM(A1)") == "'@SUM(A1)"
+    assert csv_safe("-2+3+cmd|' /C calc'!A0") == "'-2+3+cmd|' /C calc'!A0"
+    assert csv_safe("+1 (415) 555-0142") == "+1 (415) 555-0142"  # phone numbers stay readable
+    assert csv_safe("-5") == "-5" and csv_safe("Jane's iPhone") == "Jane's iPhone" and csv_safe(7) == 7

@@ -67,7 +67,7 @@ class EvidenceFS:
     def _walk_dirs(self, directory: Path) -> Iterator[Path]:
         yield directory
         for name, is_dir in self._listdir(directory):
-            if is_dir:
+            if is_dir:  # symlinked directories are not followed (is_dir(follow_symlinks=False))
                 yield from self._walk_dirs(directory / name)
 
     def glob(self, pattern: str) -> list[Path]:
@@ -191,6 +191,11 @@ _WIN_SKIP_USERS = {"public", "default", "default user", "all users", "defaultapp
 _MAC_SKIP_USERS = {"shared", "guest", ".localized"}
 
 
+def _esc(name: str) -> str:
+    """Escape glob metacharacters in a literal path component."""
+    return re.sub(r"([*?\[])", r"[\1]", name)
+
+
 def _windows_users(fs: EvidenceFS) -> list[UserProfile]:
     users = []
     for d in fs.dirs("Users/*"):
@@ -220,11 +225,6 @@ def _linux_users(fs: EvidenceFS) -> list[UserProfile]:
     if root_home and root_home.is_dir():
         users.append(UserProfile("root", root_home))
     return users
-
-
-def _esc(name: str) -> str:
-    """Escape glob metacharacters in a literal path component."""
-    return re.sub(r"([*?\[])", r"[\1]", name)
 
 
 def _classify(fs: EvidenceFS) -> str | None:
@@ -282,7 +282,7 @@ def _system_details(os_name: str, fs: EvidenceFS) -> dict[str, str]:
     details: dict[str, str] = {}
     if os_name == WINDOWS:
         details.update(_windows_details(fs))
-    if os_name == MACOS:
+    elif os_name == MACOS:
         prefs = fs.find("Library/Preferences/SystemConfiguration/preferences.plist")
         if prefs:
             try:

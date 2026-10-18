@@ -10,8 +10,10 @@ every file touched gets a coverage record.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import pkgutil
+import re
 import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -26,10 +28,10 @@ from .readers.registry import Hive, open_hive
 from .readers.sqlite import SafeDB, open_db
 
 # Coverage statuses
-PARSED = "parsed"            # file recognised and parsed
-EMPTY = "empty"              # file recognised, no records
+PARSED = "parsed"              # file recognised and parsed
+EMPTY = "empty"                # file recognised, no records
 UNRECOGNISED = "unrecognised"  # file present but its format/schema is not one we know
-ERROR = "error"              # parser failed on this file
+ERROR = "error"                # parser failed on this file
 
 
 @dataclass
@@ -147,6 +149,9 @@ class Context:
     @contextmanager
     def hive(self, path: Path) -> Iterator[Hive]:
         self.fs.sha256(path)
+        for side in Path(path).parent.iterdir():  # transaction logs are evidence too
+            if side.name.lower().startswith(Path(path).name.lower() + ".log") and side.is_file():
+                self.fs.sha256(side)
         with open_hive(path, self.workdir) as h:
             yield h
 
@@ -166,16 +171,14 @@ class Context:
 
         Files go to ``<export dir>/<system>/<plugin>/<name>``; returns the
         relative path (None when exporting is off), SHA-256 and size so the
-        observation records exactly what was written.
+        observation records exactly what was written. Name components are
+        sanitised, so evidence-controlled names cannot escape the export dir.
         """
-        import hashlib
-        import re as _re
-
         digest = hashlib.sha256(data).hexdigest()
         rel = None
         if self.export_dir is not None:
-            safe_sys = _re.sub(r"[^A-Za-z0-9._-]+", "_", self.system.label)
-            parts = [_re.sub(r"[^A-Za-z0-9._ -]+", "_", p).strip(" .") or "_"
+            safe_sys = re.sub(r"[^A-Za-z0-9._-]+", "_", self.system.label)
+            parts = [re.sub(r"[^A-Za-z0-9._ -]+", "_", p).strip(" .")[:120] or "_"
                      for p in name.replace("\\", "/").split("/") if p not in ("", ".", "..")]
             target = Path(self.export_dir, safe_sys, self.plugin.id, *parts)
             target.parent.mkdir(parents=True, exist_ok=True)

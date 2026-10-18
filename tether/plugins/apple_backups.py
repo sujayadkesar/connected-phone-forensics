@@ -114,6 +114,7 @@ def _parse_backup(ctx: Context, folder: Path) -> None:
             "manifest_application_count": len(manifest_apps) if isinstance(manifest_apps, dict) else None,
         }
         label = data["device_name"] or folder.name
+        dclass = apple_device_class(data["product_type"])
         times: list[tuple[datetime | None, str, str, Path | None]] = [
             (from_datetime(info.get("Last Backup Date")), "Last Backup Date (Info.plist)",
              "plist:$['Last Backup Date']", info_p),
@@ -132,7 +133,7 @@ def _parse_backup(ctx: Context, folder: Path) -> None:
                 message=f"Local backup of {label}{enc}: {desc}",
                 channel=Channel.BACKUP, timestamp=ts, timestamp_desc=desc,
                 provenance=ctx.prov(src, locator), device_ids=ids, data=data, phone_os="ios",
-                device_class=apple_device_class(data["product_type"]),
+                device_class=dclass,
             ))
             emitted += 1
         if not emitted:
@@ -140,8 +141,7 @@ def _parse_backup(ctx: Context, folder: Path) -> None:
                 artifact=ctx.plugin.id, event="device_backup",
                 message=f"Local backup of {label} (no backup date recorded)",
                 channel=Channel.BACKUP, provenance=ctx.prov(anchor, "folder"),
-                device_ids=ids, data=data, phone_os="ios",
-                device_class=apple_device_class(data["product_type"]),
+                device_ids=ids, data=data, phone_os="ios", device_class=dclass,
             ))
             emitted = 1
         n[0] += emitted

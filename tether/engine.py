@@ -81,8 +81,7 @@ def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
     lib_logger.propagate = False
     lib_logger.addHandler(capture)
     try:
-        result = _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same or [])
-        return result
+        return _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same or [])
     finally:
         lib_logger.removeHandler(capture)
 

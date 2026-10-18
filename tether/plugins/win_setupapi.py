@@ -11,6 +11,11 @@ serial for Android), and the section start is the moment Windows first set
 the device up: usually the first time that phone was plugged into this
 computer. The time is local; it is converted with the image's timezone.
 Rotated logs (``setupapi.dev.YYYYMMDD_hhmmss.log``) are read too.
+
+A device instance can have several sections: later ones are driver updates
+or reinstalls (e.g. ``UpdateDriverForPlugAndPlayDevices``). Only the
+earliest section per instance, across all logs, is reported as the first
+install; the others are reported as ``usb_driver_install``.
 """
 
 from __future__ import annotations
@@ -54,6 +59,7 @@ class WindowsSetupapi(Plugin):
                 hive, _path, control_sets = opened
                 tz = windows_timezone(hive, control_sets)
                 known = phone_instance_index(hive, control_sets[0] if control_sets else "\\ControlSet001")
+        sections: list[dict] = []
         for log in logs:
             with ctx.file_scope(log) as n:
                 lines = ctx.read_text(log).splitlines()
@@ -83,22 +89,35 @@ class WindowsSetupapi(Plugin):
                         continue
                     y, mo, d, hh, mm, ss, ms = (int(x) for x in start.groups())
                     local = datetime(y, mo, d, hh, mm, ss, ms * 1000)
-                    ts = tz.to_utc(local) if tz else local.replace(tzinfo=timezone.utc)
-                    serial = instance if "&" not in instance and not suffix else None
-                    ids = [ident(IdKind.USB_SERIAL, serial)]
-                    if phone_os == "ios" and serial:
-                        ids.append(ident(IdKind.UDID, serial))
-                    ctx.emit(Observation(
-                        artifact=self.id, event="usb_driver_first_install",
-                        message=f"Windows installed drivers for {'iPhone/iPad' if phone_os == 'ios' else 'Android ' + device_class} "
-                                f"{inst} ({m.group('how')})",
-                        channel=Channel.USB, timestamp=ts,
-                        timestamp_desc="Device install section start (local time converted with evidence timezone)"
-                        if tz else "Device install section start (local time, timezone unknown)",
-                        provenance=ctx.prov(log, f"line={i + 1}"),
-                        device_ids=ids, phone_os=phone_os, device_class=device_class,
-                        data={"instance": inst, "trigger": m.group("how"), "vid": vid, "pid": pid,
-                              "classified_by": classified_by,
-                              "timezone": tz.describe() if tz else None},
-                    ))
+                    sections.append({
+                        "ts": tz.to_utc(local) if tz else local.replace(tzinfo=timezone.utc),
+                        "log": log, "line": i + 1, "inst": inst, "how": m.group("how"), "vid": vid, "pid": pid,
+                        "suffix": suffix, "instance": instance, "phone_os": phone_os,
+                        "device_class": device_class, "classified_by": classified_by,
+                    })
                     n[0] += 1
+        first: dict[str, dict] = {}
+        for sec in sections:
+            k = sec["inst"].upper()
+            if k not in first or sec["ts"] < first[k]["ts"]:
+                first[k] = sec
+        for sec in sections:
+            is_first = first[sec["inst"].upper()] is sec
+            serial = sec["instance"] if "&" not in sec["instance"] and not sec["suffix"] else None
+            ids = [ident(IdKind.USB_SERIAL, serial)]
+            if sec["phone_os"] == "ios" and serial:
+                ids.append(ident(IdKind.UDID, serial))
+            what = "iPhone/iPad" if sec["phone_os"] == "ios" else f"Android {sec['device_class']}"
+            ctx.emit(Observation(
+                artifact=self.id, event="usb_driver_first_install" if is_first else "usb_driver_install",
+                message=f"Windows {'first ' if is_first else ''}installed drivers for {what} {sec['inst']} "
+                        f"({sec['how']})",
+                channel=Channel.USB, timestamp=sec["ts"],
+                timestamp_desc="Device install section start (local time converted with evidence timezone)"
+                if tz else "Device install section start (local time, timezone unknown)",
+                provenance=ctx.prov(sec["log"], f"line={sec['line']}"),
+                device_ids=ids, phone_os=sec["phone_os"], device_class=sec["device_class"],
+                data={"instance": sec["inst"], "trigger": sec["how"], "vid": sec["vid"], "pid": sec["pid"],
+                      "classified_by": sec["classified_by"], "first_for_instance": is_first,
+                      "timezone": tz.describe() if tz else None},
+            ))

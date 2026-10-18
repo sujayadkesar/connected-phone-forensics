@@ -9,7 +9,7 @@ returns each distinct row version with where it came from.
 
 Pure Python, read-only, independent of the sqlite3 library. Implements the
 file format documented at https://www.sqlite.org/fileformat2.html (database
-header, b-tree pages, record format, overflow pages) and
+header, b-tree pages, record format, overflow pages, text encoding) and
 https://www.sqlite.org/walformat.html (WAL header, frames, checksums).
 """
 
@@ -23,6 +23,7 @@ from typing import Any
 
 WAL_MAGIC_LE = 0x377F0682
 WAL_MAGIC_BE = 0x377F0683
+_ENCODINGS = {1: "utf-8", 2: "utf-16-le", 3: "utf-16-be"}
 
 
 @dataclass
@@ -51,6 +52,7 @@ class _Pages:
     page_size: int
     usable: int
     frames: list[Frame] = field(default_factory=list)
+    encoding: str = "utf-8"
 
     def from_db(self, pgno: int) -> bytes | None:
         off = (pgno - 1) * self.page_size
@@ -135,7 +137,7 @@ def _varint(buf: bytes, pos: int) -> tuple[int, int]:
     return (result << 8) | buf[pos + 8], pos + 9
 
 
-def _decode_record(payload: bytes) -> list[Any]:
+def _decode_record(payload: bytes, encoding: str = "utf-8") -> list[Any]:
     hdr_len, pos = _varint(payload, 0)
     types = []
     while pos < hdr_len:
@@ -161,7 +163,7 @@ def _decode_record(payload: bytes) -> list[Any]:
             pos += n
         elif t >= 13:
             n = (t - 13) // 2
-            values.append(payload[pos:pos + n].decode("utf-8", errors="replace"))
+            values.append(payload[pos:pos + n].decode(encoding, errors="replace"))
             pos += n
         else:
             values.append(None)  # reserved serial types 10, 11
@@ -202,7 +204,7 @@ def _leaf_cells(pages: _Pages, page: bytes, pgno: int, upto_frame: int | None) -
                 payload = bytes(payload)
                 if len(payload) < psize:
                     continue  # overflow chain incomplete; skip rather than guess
-            out.append((rowid, _decode_record(payload)))
+            out.append((rowid, _decode_record(payload, pages.encoding)))
         except (IndexError, struct.error, ValueError):
             continue
     return out
@@ -251,7 +253,7 @@ class Recovery:
     versions: list[RowVersion]       # every distinct version found, oldest first
     frames_total: int
     frames_valid: int
-    note: str = ""
+    note: str = ""                   # why recovery could not be performed, if it could not
 
 
 def recover_table_versions(db_path: Path, table: str, wal_path: Path | None = None) -> Recovery:
@@ -283,19 +285,20 @@ def _recover(db_path: Path, db, table: str, wal_path: Path | None) -> Recovery:
     if len(db) >= 100 and db[:16] == b"SQLite format 3\x00":
         page_size = struct.unpack_from(">H", db, 16)[0]
         page_size = 65536 if page_size == 1 else page_size
-        reserved = db[20]
+        header = bytes(db[:100])
         if wal_page_size and wal_page_size != page_size:
             frames = []
     elif wal_page_size and len(db) < 100:
         page_size = wal_page_size
-        first = next((f.data for f in frames if f.page == 1 and f.valid), b"")
-        if first[:16] != b"SQLite format 3\x00":
+        header = next((f.data[:100] for f in frames if f.page == 1 and f.valid), b"")
+        if header[:16] != b"SQLite format 3\x00":
             return Recovery(table, [], len(frames), sum(f.valid for f in frames), "no database header")
-        reserved = first[20]
         db = b""
     else:
         return Recovery(table, [], 0, 0, "not a SQLite database")
-    pages = _Pages(db, page_size, page_size - reserved, frames)
+    reserved = header[20]
+    encoding = _ENCODINGS.get(struct.unpack_from(">I", header, 56)[0], "utf-8")
+    pages = _Pages(db, page_size, page_size - reserved, frames, encoding)
     schema = _schema(pages)
     if table not in schema:
         return Recovery(table, [], len(frames), sum(f.valid for f in frames), "table not found")

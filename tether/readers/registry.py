@@ -117,6 +117,9 @@ def open_hive(path: Path, workdir: Path | None = None) -> Iterator[Hive]:
 
     path = Path(path)
     logs = [path.with_name(path.name + s) for s in (".LOG1", ".LOG2", ".LOG")]
+    if not any(p.is_file() for p in logs):  # transaction logs are often lower-case on disk
+        logs = [p for p in path.parent.iterdir()
+                if p.name.lower() in {f"{path.name.lower()}{s}" for s in (".log1", ".log2", ".log")}]
     logs = [p for p in logs if p.is_file() and p.stat().st_size > 0]
     if not logs:
         yield Hive(RegistryHive(str(path)), path, recovered=False)

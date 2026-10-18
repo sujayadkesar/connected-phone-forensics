@@ -67,6 +67,12 @@ def _strip_inf(text: str | None) -> str | None:
     return text.strip() or None
 
 
+# A class token starts an id component ("USB\\Class_06" or "...&Class_06"); the
+# "SubClass_06" in a mass-storage id ("Class_08&SubClass_06&Prot_50") is not class 06.
+_CLASS_TOKEN = re.compile(r"(?:^|[\\&])CLASS_([0-9A-F]{2})(?:&SUBCLASS_([0-9A-F]{2}))?(?:&PROT_([0-9A-F]{2}))?",
+                          re.I)
+
+
 def _signals(key: RegKey) -> set[str]:
     ids = []
     for name in ("HardwareID", "CompatibleIDs"):
@@ -75,19 +81,21 @@ def _signals(key: RegKey) -> set[str]:
             ids += [str(x).upper() for x in v]
         elif isinstance(v, str):
             ids.append(v.upper())
+    classes = {(m.group(1).upper(), (m.group(2) or "").upper(), (m.group(3) or "").upper())
+               for i in ids for m in _CLASS_TOKEN.finditer(i)}
     text = " ".join(ids + [str(key.get("Service") or "").upper(),
                            str(_strip_inf(key.get("DeviceDesc")) or "").upper()])
     out = set()
     if "MS_COMP_MTP" in text or "WUDFWPDMTP" in text or " MTP" in f" {text}":
         out.add("mtp")
-    if "CLASS_06" in text:
+    if any(c[0] == "06" for c in classes):  # still image (PTP)
         out.add("ptp")
-    if "CLASS_FF&SUBCLASS_42&PROT_01" in text or "ADB" in text:
+    if ("FF", "42", "01") in classes or "ADB" in text:
         out.add("adb")
     # RNDIS tethering is class E0/01/03 or EF/04/01. Plain class E0 is any wireless
     # controller: E0/01/01 is a Bluetooth radio (seen on a real VMware hive).
-    if ("MS_COMP_RNDIS" in text or "CLASS_E0&SUBCLASS_01&PROT_03" in text
-            or "CLASS_EF&SUBCLASS_04&PROT_01" in text or "RNDIS" in text):
+    if ("MS_COMP_RNDIS" in text or ("E0", "01", "03") in classes or ("EF", "04", "01") in classes
+            or "RNDIS" in text):
         out.add("rndis")
     if "ANDROID" in text:
         out.add("android")

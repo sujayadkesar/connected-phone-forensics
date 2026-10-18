@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -92,11 +93,15 @@ def _alias_index(db: SafeDB, table: str) -> int | None:
     return None
 
 
-def recovered_rows(db: SafeDB, path: Path, table: str) -> list[tuple[str, dict[str, Any], RowVersion]]:
+def recovered_rows(db: SafeDB, path: Path, table: str,
+                   warn: Callable[[str, Path], None] | None = None) -> list[tuple[str, dict[str, Any], RowVersion]]:
     """Row versions present in the WAL/main file but not in the current table state.
 
     Returns (status, row-as-dict, version) with status "deleted" (rowid no
     longer exists) or "superseded" (an earlier/other version of a live row).
+    When recovery cannot run on this file, ``warn`` is told why, so the
+    report never implies that a file was searched for deleted rows when it
+    was not.
     """
     cols = db.schema.columns(table)
     if not cols:
@@ -107,6 +112,10 @@ def recovered_rows(db: SafeDB, path: Path, table: str) -> list[tuple[str, dict[s
         current[r[0]] = tuple(r[1:])
     out = []
     rec = recover_table_versions(path, table)
+    if rec.note:
+        if warn is not None:
+            warn(f"deleted/superseded-row recovery not performed for table {table}: {rec.note}", path)
+        return []
     for v in rec.versions:
         vals = list(v.values) + [None] * (len(cols) - len(v.values))
         vals = vals[: len(cols)]
@@ -284,7 +293,7 @@ class WindowsPhoneLink(Plugin):
                         "pc_status", "subject"]
                 for r in db.select("message", cols):
                     n[0] += self._sms(ctx, prof, path, dict(r), r["_rowid_"], recipients, threads)
-                for status, row, ver in recovered_rows(db, path, "message"):
+                for status, row, ver in recovered_rows(db, path, "message", ctx.warn):
                     n[0] += self._sms(ctx, prof, path, row, ver.rowid, recipients, threads, ver, status)
             if sc.has("mms", "message_id"):
                 parts: dict[Any, list[dict]] = defaultdict(list)
@@ -297,7 +306,7 @@ class WindowsPhoneLink(Plugin):
                 for r in db.select("mms", ["message_id", "thread_id", "from_address", "type", "timestamp",
                                            "subject", "subscription_id"]):
                     n[0] += self._mms(ctx, prof, path, dict(r), r["_rowid_"], parts, threads)
-                for status, row, ver in recovered_rows(db, path, "mms"):
+                for status, row, ver in recovered_rows(db, path, "mms", ctx.warn):
                     n[0] += self._mms(ctx, prof, path, row, ver.rowid, parts, threads, ver, status)
             for t in sorted(x for x in sc.tables if x.startswith("rcs")):
                 ctx.warn(f"RCS table '{t}' present but not parsed (schema not publicly verified); "
@@ -354,7 +363,7 @@ class WindowsPhoneLink(Plugin):
                     "last_updated_time", "phone_account_id"]
             for r in db.select("call_history", cols):
                 n[0] += self._call(ctx, prof, path, dict(r), r["_rowid_"])
-            for status, row, ver in recovered_rows(db, path, "call_history"):
+            for status, row, ver in recovered_rows(db, path, "call_history", ctx.warn):
                 n[0] += self._call(ctx, prof, path, row, ver.rowid, ver, status)
 
     def _call(self, ctx, prof, path, r, rowid, ver=None, status=None) -> int:
@@ -380,7 +389,7 @@ class WindowsPhoneLink(Plugin):
             cols = ["id", "notification_id", "package_name", "json", "post_time", "state"]
             for r in db.select("notifications", cols):
                 n[0] += self._notification(ctx, prof, path, dict(r), r["_rowid_"])
-            for status, row, ver in recovered_rows(db, path, "notifications"):
+            for status, row, ver in recovered_rows(db, path, "notifications", ctx.warn):
                 n[0] += self._notification(ctx, prof, path, row, ver.rowid, ver, status)
 
     def _notification(self, ctx, prof, path, r, rowid, ver=None, status=None) -> int:

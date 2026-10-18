@@ -4,6 +4,10 @@ One file, no external resources: forensic workstations are often offline,
 and a report must render the same years later. Device cards and coverage are
 rendered statically (they print); the timeline is rendered by a small inline
 script with filtering, because it can hold tens of thousands of rows.
+
+Every evidence-derived string is HTML-escaped in static parts and escaped
+again by the script before insertion; the embedded JSON has every '<'
+written as \\u003c so no string can end or alter the script element.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{padding:28px 32px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
 h1{margin:0;font-size:22px;letter-spacing:-.01em}h2{font-size:17px;margin:32px 0 12px}
 h3{font-size:15px;margin:0}.muted{color:var(--muted)}main{padding:0 32px 48px;max-width:1400px}
-nav{display:flex;gap:18px;margin-top:12px;font-size:13px}nav a{color:var(--accent);text-decoration:none}
+nav{display:flex;gap:18px;margin-top:12px;font-size:13px;flex-wrap:wrap}nav a{color:var(--accent);text-decoration:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin-top:16px}
 .stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .stat b{display:block;font-size:22px}.card{background:var(--panel);border:1px solid var(--line);
@@ -50,12 +54,13 @@ border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var
 
 _JS = r"""
 const D=JSON.parse(document.getElementById('tether-data').textContent);
-const rows=D.rows.map(a=>{const o={};D.keys.forEach((k,i)=>{o[k]=(k in D.dict)?D.dict[k][a[i]]:a[i];});return o;});const tb=document.querySelector('#tl tbody');const PAGE=500;let shown=0,filtered=rows;
+const rows=D.rows.map(a=>{const o={};D.keys.forEach((k,i)=>{o[k]=(k in D.dict)?D.dict[k][a[i]]:a[i];});return o;});
+const tb=document.querySelector('#tl tbody');const PAGE=500;let shown=0,filtered=rows;
 const q=document.getElementById('q'),fd=document.getElementById('fdev'),fc=document.getElementById('fch'),fa=document.getElementById('fart');
 function opt(sel,vals){for(const v of vals){const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);}}
 opt(fd,[...new Set(rows.map(r=>r.device||'(none)'))].sort());opt(fc,[...new Set(rows.map(r=>r.channel))].sort());
 opt(fa,[...new Set(rows.map(r=>r.artifact))].sort());
-function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function render(reset){if(reset){tb.innerHTML='';shown=0;}const end=Math.min(shown+PAGE,filtered.length);
 const frag=document.createDocumentFragment();for(let i=shown;i<end;i++){const r=filtered[i];const tr=document.createElement('tr');
 const t=(r.datetime||'').replace('T',' ').replace(/\.0+(?=\+)/,'').replace('+00:00','');
@@ -72,6 +77,10 @@ function apply(){const t=q.value.toLowerCase();filtered=rows.filter(r=>(!fd.valu
 
 def _fmt(dt) -> str:
     return iso(dt)[:19].replace("T", " ") + " UTC" if dt else "—"
+
+
+def _fmt_iso(s: str | None) -> str:
+    return s[:19].replace("T", " ") if s else "—"
 
 
 def _candidate_groups(result: ScanResult) -> str:
@@ -117,8 +126,7 @@ def _cards(result: ScanResult, devices) -> str:
         ids = "".join(
             f"<tr><td>{escape(i['kind'])}</td><td class='mono'>{escape(i['value'])}"
             + (f"<div class='muted'>as recorded: {escape(', '.join(i['as_recorded']))}</div>" if i['as_recorded'] else "")
-            + "</td>"
-            f"<td>{escape(i['strength'])}</td><td class='mono'>{escape(', '.join(i['sources']))}</td></tr>"
+            + f"</td><td>{escape(i['strength'])}</td><td class='mono'>{escape(', '.join(i['sources']))}</td></tr>"
             for i in d["identifiers"])
         chans = "".join(
             f"<tr><td>{escape(c['channel'])}</td><td class='mono'>{escape(_fmt_iso(c['first_seen']))}</td>"
@@ -149,10 +157,6 @@ def _cards(result: ScanResult, devices) -> str:
   {"<details open><summary>May be the same phone as (not merged; verify)</summary><ul>" + pm_html + "</ul></details>" if pm_html else ""}
 </section>""")
     return "".join(out)
-
-
-def _fmt_iso(s: str | None) -> str:
-    return s[:19].replace("T", " ") if s else "—"
 
 
 def _coverage(result: ScanResult) -> str:
@@ -199,8 +203,6 @@ def _compact(value):
 
 _ROW_KEYS = ("datetime", "timestamp_desc", "time_source", "device", "device_label", "channel", "artifact",
              "event", "message", "user", "system", "source_path", "locator", "sha256", "device_ids")
-
-
 _DICT_KEYS = ("timestamp_desc", "time_source", "device", "device_label", "channel", "artifact", "event",
               "user", "system", "source_path", "sha256")
 
@@ -239,7 +241,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
             timeline.append(row)
     truncated = total - len(timeline)
     data = json.dumps(_encode(timeline), default=_jsonable, ensure_ascii=False, separators=(",", ":"))
-    data = data.replace("</", "<\\/")
+    data = data.replace("<", "\\u003c")
     phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
     n_dev = len(phone_devs)
     n_conf = sum(1 for d in phone_devs if d.confirmed)
@@ -253,6 +255,10 @@ def write_html(result: ScanResult, path: Path) -> Path:
     warnings = "".join(
         f"<li><span class='mono'>{escape(w.plugin)}</span> {escape(w.source_path or '')}: "
         f"{escape(w.message.splitlines()[0])}</li>" for w in result.warnings)
+    trunc_note = (f'<p class="note"><b>{truncated} later event(s) are not shown here</b> to keep this report usable; '
+                  f'the complete timeline is in timeline.csv and timeline.jsonl. Long values are shortened in this '
+                  f'view.</p>' if truncated else
+                  '<p class="note">Long values are shortened in this view; full values are in timeline.jsonl.</p>')
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tether report</title><style>{_CSS}</style></head><body>
@@ -260,12 +266,12 @@ def write_html(result: ScanResult, path: Path) -> Path:
   <h1>Tether report</h1>
   <div class="muted">{case}Generated {_fmt(result.finished)} by Tether {escape(result.tool_version)} ·
   input <span class="mono">{escape(result.input_path)}</span></div>
-  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#timeline">Timeline</a><a href="#coverage">Coverage</a>
-  <a href="#method">Method</a></nav>
+  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#timeline">Timeline</a>
+  <a href="#coverage">Coverage</a><a href="#method">Method</a></nav>
 </header>
 <main>
 <div class="grid">
-  <div class="stat"><b>{n_dev}</b><span class="muted">phones ({n_conf} confirmed)</span></div>
+  <div class="stat"><b>{n_dev}</b><span class="muted">phone records ({n_conf} confirmed)</span></div>
   <div class="stat"><b>{total}</b><span class="muted">timed events</span></div>
   <div class="stat"><b>{len(result.observations)}</b><span class="muted">observations</span></div>
   <div class="stat"><b>{len(result.systems)}</b><span class="muted">computers examined</span></div>
@@ -280,9 +286,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
 <div class="filters"><input id="q" placeholder="Search all fields…"><select id="fdev"><option value="">All devices</option></select>
 <select id="fch"><option value="">All channels</option></select><select id="fart"><option value="">All artifacts</option></select></div>
 <div id="count" class="muted"></div>
-{f'<p class="note"><b>{truncated} later event(s) are not shown here</b> to keep this report usable; '
- f'the complete timeline is in timeline.csv and timeline.jsonl. Long values are shortened in this view.</p>'
- if truncated else '<p class="note">Long values are shortened in this view; full values are in timeline.jsonl.</p>'}
+{trunc_note}
 <noscript><p class="note">JavaScript is off: open timeline.csv for the full timeline.</p></noscript>
 <table id="tl"><thead><tr><th>Time (UTC)</th><th>Meaning</th><th>Device</th><th>Channel</th><th>Event</th><th>Source</th></tr></thead><tbody></tbody></table>
 <button id="more">Show more</button>

@@ -73,3 +73,37 @@ def test_database_living_entirely_in_the_wal(tmp_path):
     c.close()
     rec = recover_table_versions(ev / "new.db", "t")
     assert [v.values[1] for v in rec.versions] == ["only in wal"]
+
+
+def test_utf16_database_text_is_decoded(tmp_path):
+    db = tmp_path / "u16.db"
+    c = sqlite3.connect(db, isolation_level=None)
+    c.execute("PRAGMA encoding='UTF-16le'")
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA wal_autocheckpoint=0")
+    c.execute("CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)")
+    c.execute("INSERT INTO t(v) VALUES ('héllo'), ('wörld')")
+    c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    c.execute("DELETE FROM t WHERE v='héllo'")
+    ev = tmp_path / "ev"
+    ev.mkdir()
+    for suffix in ("", "-wal"):
+        shutil.copy(tmp_path / f"u16.db{suffix}", ev / f"u16.db{suffix}")
+    c.close()
+    rec = recover_table_versions(ev / "u16.db", "t")
+    assert sorted(v.values[1] for v in rec.versions) == ["héllo", "wörld"]
+
+
+def test_recovery_failure_is_reported_not_silent(tmp_path, monkeypatch):
+    from tether.plugins import win_phonelink
+    from tether.readers.sqlite import open_db
+    from tether.readers.sqlite_wal import Recovery
+
+    db, _ = _scenario(tmp_path)
+    monkeypatch.setattr(win_phonelink, "recover_table_versions",
+                        lambda path, table: Recovery(table, [], 0, 0, "no database header"))
+    warnings = []
+    with open_db(db) as safe:
+        rows = win_phonelink.recovered_rows(safe, db, "notifications", lambda msg, path: warnings.append(msg))
+    assert rows == []
+    assert warnings == ["deleted/superseded-row recovery not performed for table notifications: no database header"]

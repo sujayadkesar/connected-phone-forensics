@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from .model import Identifier, IdKind, Observation, Strength
+from .model import Identifier, IdKind, Observation, Strength, phone_key
 from .timeutil import iso
 
 
@@ -172,7 +172,7 @@ def _infer_os(dev: Device, votes: Counter) -> str | None:
     for i in dev.identifiers:
         if i.kind == IdKind.UDID:
             return "ios"
-        if i.kind in (IdKind.MODEL,) and i.value.lower().startswith(("iphone", "ipad", "ipod")):
+        if i.kind == IdKind.MODEL and i.value.lower().startswith(("iphone", "ipad", "ipod")):
             return "ios"
     return None
 
@@ -306,31 +306,37 @@ def _weak_group_key(ids: list[Identifier]) -> str:
     order = [IdKind.PHONE_NUMBER, IdKind.ACCOUNT, IdKind.ICCID, IdKind.DEVICE_NAME,
              IdKind.MODEL, IdKind.OS_VERSION]
     for kind in order:
-        vals = sorted(i.value.lower() for i in ids if i.kind == kind)
+        vals = sorted(phone_key(i.value) if kind == IdKind.PHONE_NUMBER else i.value.lower()
+                      for i in ids if i.kind == kind)
         if vals:
             return f"{kind.value}={vals[0]}"
     return "|".join(sorted(i.key() for i in ids))
+
+
+# Signals derived from the same SIM or account are one piece of evidence, not several.
+_SIGNAL_FAMILY = {"phone_number": "subscriber", "iccid": "subscriber", "account": "subscriber"}
 
 
 def _possible_matches(devices: list[Device]) -> list[dict[str, Any]]:
     """Device pairs that may be one phone, with every signal that suggests it.
 
     Signals are grouped per pair; ``independent_signals`` counts distinct
-    signal kinds (a shared name and adjacent MACs are two independent hints).
+    signal families (a shared name and adjacent MACs are two independent
+    hints; a shared ICCID and phone number both describe one SIM).
     """
     by_pair: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
     for m in _raw_matches(devices):
         by_pair[tuple(m["devices"])].append({**m["shared"], "note": m["note"]})
     out = []
     for pair, signals in sorted(by_pair.items()):
-        kinds = sorted({s["kind"] for s in signals})
-        out.append({"devices": list(pair), "signals": signals, "independent_signals": len(kinds)})
+        families = {_SIGNAL_FAMILY.get(s["kind"], s["kind"]) for s in signals}
+        out.append({"devices": list(pair), "signals": signals, "independent_signals": len(families)})
     out.sort(key=lambda m: (-m["independent_signals"], m["devices"]))
     return out
 
 
 def _raw_matches(devices: list[Device]) -> list[dict[str, Any]]:
-    """Pairs of devices that share a weak or link identifier."""
+    """Pairs of devices that share a weak or link identifier, plus MAC heuristics."""
     index: dict[tuple[str, str], list[str]] = defaultdict(list)
     for d in devices:
         for i in d.identifiers:
@@ -338,10 +344,14 @@ def _raw_matches(devices: list[Device]) -> list[dict[str, Any]]:
                 continue
             if i.kind in (IdKind.MODEL, IdKind.OS_VERSION):
                 continue  # far too common to suggest anything
-            index[(i.kind.value, i.value.lower())].append(d.id)
+            key = phone_key(i.value) if i.kind == IdKind.PHONE_NUMBER else i.value.lower()
+            if key:
+                index[(i.kind.value, key)].append(d.id)
     out = []
     for (kind, value), ids in sorted(index.items()):
         uniq = sorted(set(ids))
+        if len(uniq) > 25:
+            continue  # shared by so many records that it says nothing about any one phone
         for a_i in range(len(uniq)):
             for b_i in range(a_i + 1, len(uniq)):
                 out.append({
@@ -386,21 +396,33 @@ def _mac_matches(devices: list[Device]) -> list[dict[str, Any]]:
     Never merges; reported for the examiner to verify.
     """
     out = []
-    macs = {d.id: _device_macs(d) for d in devices}
-    ids = sorted(macs)
-    for a_i, a in enumerate(ids):
-        for b in ids[a_i + 1:]:
-            for la, va in macs[a]:
-                for lb, vb in macs[b]:
-                    same_oui = (va >> 24) == (vb >> 24)
-                    if same_oui and 0 < abs(va - vb) <= 2:
-                        out.append({"devices": [a, b], "shared": {"kind": "adjacent_mac", "value": f"{la} ~ {lb}"},
-                                    "note": "MAC addresses differ by "
-                                            f"{abs(va - vb)} within the same vendor prefix; vendors often assign "
-                                            "consecutive addresses to one handset's Wi-Fi and Bluetooth (heuristic)"})
-                    elif not same_oui and (va & 0xFFFFFF) == (vb & 0xFFFFFF):
-                        out.append({"devices": [a, b], "shared": {"kind": "mac_suffix", "value": f"{la} ~ {lb}"},
-                                    "note": "last three bytes of the MAC addresses match; locally administered "
-                                            "addresses such as hotspot BSSIDs are often derived from the device's "
-                                            "base address (heuristic)"})
+    by_suffix: dict[int, list[tuple[str, str, int]]] = defaultdict(list)
+    by_oui: dict[int, list[tuple[str, str, int]]] = defaultdict(list)
+    for d in devices:
+        for label, value in _device_macs(d):
+            by_suffix[value & 0xFFFFFF].append((d.id, label, value))
+            by_oui[value >> 24].append((d.id, label, value))
+    seen = set()
+    for entries in by_oui.values():
+        entries.sort(key=lambda e: e[2])
+        for i, (da, la, va) in enumerate(entries):
+            for db, lb, vb in entries[i + 1:]:
+                if vb - va > 2:
+                    break
+                if da != db and vb > va and (da, db, la, lb) not in seen:
+                    seen.add((da, db, la, lb))
+                    a, b = sorted((da, db))
+                    out.append({"devices": [a, b], "shared": {"kind": "adjacent_mac", "value": f"{la} ~ {lb}"},
+                                "note": f"MAC addresses differ by {vb - va} within the same vendor prefix; vendors "
+                                        "often assign consecutive addresses to one handset's Wi-Fi and Bluetooth "
+                                        "(heuristic)"})
+    for entries in by_suffix.values():
+        for i, (da, la, va) in enumerate(entries):
+            for db, lb, vb in entries[i + 1:]:
+                if da != db and (va >> 24) != (vb >> 24):
+                    a, b = sorted((da, db))
+                    out.append({"devices": [a, b], "shared": {"kind": "mac_suffix", "value": f"{la} ~ {lb}"},
+                                "note": "last three bytes of the MAC addresses match; locally administered "
+                                        "addresses such as hotspot BSSIDs are often derived from the device's "
+                                        "base address (heuristic)"})
     return out

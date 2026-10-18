@@ -44,6 +44,12 @@ def _hive(path):
     h.value(mtp, "Service", "WUDFWpdMtp")
     h.value(mtp, "CompatibleIDs", ["USB\\MS_COMP_MTP"], REG_MULTI_SZ)
     _times(h, mtp, T_INSTALL + 9_670_000, T_ARRIVE, T_REMOVE)
+    # The phone's SD card exposed as mass storage: SubClass_06 (SCSI) is not class 06 (PTP),
+    # so this interface must not supply the device's name.
+    msc = f"{USB}\\VID_04E8&PID_6860&MI_01\\6&18a2405&1&0002"
+    h.value(msc, "DeviceDesc", "USB Mass Storage Device")
+    h.value(msc, "CompatibleIDs", ["USB\\Class_08&SubClass_06&Prot_50", "USB\\Class_08"], REG_MULTI_SZ)
+    h.value(msc, "ContainerID", CID)
     modem = f"{USB}\\VID_04E8&PID_6860&Modem\\6&18a2405&1&0001"
     h.value(modem, "DeviceDesc", "SAMSUNG Mobile USB Modem", REG_SZ)
     h.value(modem, "ContainerID", CID)

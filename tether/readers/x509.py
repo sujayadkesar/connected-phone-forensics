@@ -10,10 +10,11 @@ from __future__ import annotations
 import base64
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 _PEM_RE = re.compile(rb"-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----", re.S)
 _OID_CN = bytes.fromhex("550403")
+_TIME_RE = re.compile(r"^(\d{12}|\d{14})(?:\.\d+)?(Z|[+-]\d{4})?$")
 
 
 @dataclass
@@ -48,16 +49,32 @@ def _children(buf: bytes, start: int, end: int) -> list[tuple[int, int, int]]:
 
 
 def _time(tag: int, raw: bytes) -> datetime | None:
-    text = raw.decode("ascii", errors="replace").rstrip("Z")
+    """UTCTime (0x17) or GeneralizedTime (0x18).
+
+    UTCTime years follow RFC 5280 section 4.1.2.5.1: YY >= 50 is 19YY, else
+    20YY (Python's %y would pivot at 69). An explicit +hhmm/-hhmm offset is
+    applied; DER requires 'Z', but some generators write offsets.
+    """
+    text = raw.decode("ascii", errors="replace").strip()
+    m = _TIME_RE.match(text)
+    if not m or tag not in (0x17, 0x18):
+        return None
+    digits, zone = m.group(1), m.group(2) or "Z"
     try:
-        if tag == 0x17:  # UTCTime YYMMDDHHMMSS
-            dt = datetime.strptime(text[:12], "%y%m%d%H%M%S")
-        elif tag == 0x18:  # GeneralizedTime YYYYMMDDHHMMSS
-            dt = datetime.strptime(text[:14], "%Y%m%d%H%M%S")
+        if tag == 0x17 and len(digits) == 12:
+            yy = int(digits[:2])
+            year = 1900 + yy if yy >= 50 else 2000 + yy
+            dt = datetime(year, int(digits[2:4]), int(digits[4:6]), int(digits[6:8]), int(digits[8:10]),
+                          int(digits[10:12]))
+        elif tag == 0x18 and len(digits) == 14:
+            dt = datetime.strptime(digits, "%Y%m%d%H%M%S")
         else:
             return None
     except ValueError:
         return None
+    if zone != "Z":
+        sign = 1 if zone[0] == "+" else -1
+        dt -= sign * timedelta(hours=int(zone[1:3]), minutes=int(zone[3:5]))
     return dt.replace(tzinfo=timezone.utc)
 
 
@@ -74,7 +91,7 @@ def _cn(buf: bytes, start: int, end: int) -> str | None:
 def parse_der(der: bytes) -> CertInfo | None:
     try:
         _tag, cs, ce = _tlv(der, 0)
-        tbs_tag, ts, te = _children(der, cs, ce)[0]
+        _tbs_tag, ts, te = _children(der, cs, ce)[0]
         fields = _children(der, ts, te)
         i = 1 if fields and fields[0][0] == 0xA0 else 0  # optional [0] version
         serial = der[fields[i][1]:fields[i][2]].hex()

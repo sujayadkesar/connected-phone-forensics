@@ -60,7 +60,7 @@ class HiveBuilder:
             raw = b"".join(s.encode("utf-16-le") + b"\x00\x00" for s in data) + b"\x00\x00"
         elif vtype == REG_DWORD:
             raw = struct.pack("<I", data)
-        elif vtype in (REG_QWORD,) or vtype == DEVPROP_FILETIME:
+        elif vtype in (REG_QWORD, DEVPROP_FILETIME):
             raw = struct.pack("<Q", data)
         else:
             raw = bytes(data)

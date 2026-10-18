@@ -17,14 +17,13 @@ _NS = uuid.UUID("6f3a1c52-3d1e-4c63-9a55-2f1f2f0b7e11")
 def _split(pattern: str) -> tuple[list[str], str | None, bool]:
     """Split a plugin path pattern into (directory parts, file mask, recursive)."""
     parts = [p for p in pattern.replace("\\", "/").split("/") if p]
-    recursive = False
     if parts and parts[-1] == "**":
         return parts[:-1], None, True
     if "**" in parts:
         i = parts.index("**")
         return parts[:i], parts[-1] if i < len(parts) - 1 else None, True
     mask = parts[-1] if parts else None
-    return parts[:-1], mask, recursive
+    return parts[:-1], mask, False
 
 
 def _with_sidecars(mask: str | None) -> str | None:
@@ -91,7 +90,7 @@ def render_targets(fmt: str) -> str:
                     g += sep + "**" + (sep + mask if mask else "")
                 elif mask:
                     g += sep + _with_sidecars(mask)
-                globs.append(g if os_name == "windows" else g)
+                globs.append(g)
             if not globs:
                 continue
             body = "\n".join(f"       {g}" for g in sorted(set(globs)))

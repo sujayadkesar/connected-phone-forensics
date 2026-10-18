@@ -56,8 +56,9 @@ def _num(value) -> int | float | None:
 def _delta_us(n: int | float, per_second: int) -> timedelta:
     """timedelta for n units where per_second units make one second, exact for ints."""
     if isinstance(n, int):
-        return timedelta(microseconds=n * 1_000_000 // per_second) if per_second <= 1_000_000 \
-            else timedelta(microseconds=n // (per_second // 1_000_000))
+        if per_second <= 1_000_000:
+            return timedelta(microseconds=n * 1_000_000 // per_second)
+        return timedelta(microseconds=n // (per_second // 1_000_000))
     return timedelta(seconds=n / per_second)
 
 

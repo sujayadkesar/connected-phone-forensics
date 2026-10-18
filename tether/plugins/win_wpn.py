@@ -84,7 +84,7 @@ class WindowsPhoneNotificationsWPN(Plugin):
                 ids = ",".join(str(int(k)) for k in handlers)
                 for r in db.select("Notification", cols, where=f"HandlerId IN ({ids})"):
                     n[0] += self._toast(ctx, path, user, dict(r), r["_rowid_"], handlers, profiles)
-                for status, row, ver in recovered_rows(db, path, "Notification"):
+                for status, row, ver in recovered_rows(db, path, "Notification", ctx.warn):
                     if row.get("HandlerId") in handlers:
                         n[0] += self._toast(ctx, path, user, row, ver.rowid, handlers, profiles, ver, status)
 

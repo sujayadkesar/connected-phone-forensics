@@ -6,12 +6,19 @@
 * ``devices.json`` — the device graph.
 * ``coverage.csv`` — every evidence file a plugin touched and what happened.
 * ``manifest.json`` — run metadata and SHA-256 of every evidence file read.
+
+JSON outputs carry values exactly as parsed. CSV files are a convenience for
+spreadsheets: they start with a UTF-8 byte-order mark (so Excel reads them as
+UTF-8) and cells that a spreadsheet would execute as a formula (starting with
+``=``, ``@``, or ``+``/``-`` followed by something other than a number) are
+prefixed with an apostrophe, because evidence strings are attacker-controlled.
 """
 
 from __future__ import annotations
 
 import csv
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -19,6 +26,16 @@ from typing import Any
 from ..engine import ScanResult
 from ..model import Observation
 from ..timeutil import iso
+
+_NUMBERISH = re.compile(r"[+-][\d\s().-]*")
+
+
+def csv_safe(value: Any) -> Any:
+    if not isinstance(value, str) or not value:
+        return value
+    if value[0] in "=@\t\r" or (value[0] in "+-" and not _NUMBERISH.fullmatch(value)):
+        return "'" + value
+    return value
 
 
 def _jsonable(v: Any) -> Any:
@@ -32,7 +49,7 @@ def _jsonable(v: Any) -> Any:
 
 
 def observation_record(obs: Observation, device_id: str | None, device_label: str | None) -> dict:
-    rec = {
+    return {
         "message": obs.message,
         "datetime": iso(obs.timestamp),
         "timestamp": int(obs.timestamp.timestamp() * 1_000_000) if obs.timestamp else None,
@@ -53,7 +70,6 @@ def observation_record(obs: Observation, device_id: str | None, device_label: st
         "sha256": obs.provenance.sha256,
         "data": obs.data,
     }
-    return rec
 
 
 def iter_records(result: ScanResult):
@@ -72,7 +88,7 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
     written: list[Path] = []
     p_tl, p_tlcsv, p_obs = outdir / "timeline.jsonl", outdir / "timeline.csv", outdir / "observations.jsonl"
     with open(p_tl, "w", encoding="utf-8") as tl, open(p_obs, "w", encoding="utf-8") as allf, \
-            open(p_tlcsv, "w", encoding="utf-8", newline="") as tlcsv:
+            open(p_tlcsv, "w", encoding="utf-8-sig", newline="") as tlcsv:
         w = csv.DictWriter(tlcsv, fieldnames=_CSV_COLS, extrasaction="ignore")
         w.writeheader()
         for obs, rec in iter_records(result):
@@ -80,9 +96,9 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
             allf.write(line + "\n")
             if obs.timestamp is not None:
                 tl.write(line + "\n")
-                row = dict(rec)
-                row["device_ids"] = ";".join(rec["device_ids"])
-                row["data"] = json.dumps(rec["data"], default=_jsonable, ensure_ascii=False)
+                row = {k: csv_safe(v) for k, v in rec.items()}
+                row["device_ids"] = csv_safe(";".join(rec["device_ids"]))
+                row["data"] = csv_safe(json.dumps(rec["data"], default=_jsonable, ensure_ascii=False))
                 w.writerow(row)
     written += [p_tl, p_tlcsv, p_obs]
 
@@ -92,11 +108,11 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
     written.append(p_dev)
 
     p_cov = outdir / "coverage.csv"
-    with open(p_cov, "w", encoding="utf-8", newline="") as f:
+    with open(p_cov, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
         w.writerow(["plugin", "system", "source_path", "status", "records", "note"])
         for c in result.coverage:
-            w.writerow([c.plugin, c.system, c.source_path, c.status, c.records, c.note])
+            w.writerow([csv_safe(x) for x in (c.plugin, c.system, c.source_path, c.status, c.records, c.note)])
     written.append(p_cov)
 
     p_man = outdir / "manifest.json"

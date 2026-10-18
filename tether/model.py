@@ -109,9 +109,18 @@ def normalize(kind: IdKind, value: str) -> str:
     if kind in (IdKind.IMEI, IdKind.MEID, IdKind.ICCID):
         return re.sub(r"[^0-9A-Fa-f]", "", v).upper()
     if kind == IdKind.PHONE_NUMBER:
-        digits = re.sub(r"[^0-9+]", "", v)
-        return digits
+        return re.sub(r"[^0-9+]", "", v)
     return v
+
+
+def phone_key(number: str) -> str:
+    """Comparison key for phone numbers: the last nine digits.
+
+    The same line appears as "+14155550142" in one artifact and
+    "(415) 555-0142" in another; the trailing digits survive both forms.
+    """
+    digits = re.sub(r"\D", "", number or "")
+    return digits[-9:] if len(digits) >= 9 else digits
 
 
 @dataclass(frozen=True)

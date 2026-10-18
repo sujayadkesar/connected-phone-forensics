@@ -15,6 +15,8 @@ LOG = """[Device Install Log]
 >>>  Section start 2024/03/15 09:00:00.000
 >>>  [Device Install (Hardware initiated) - USB\\VID_18D1&PID_4EE1&MTP\\7&abc&0&0000]
 >>>  Section start 2024/12/01 18:30:00.000
+>>>  [Device Install (UpdateDriverForPlugAndPlayDevices) - USB\\VID_05AC&PID_12A8\\00008110000A1B2C3D4E801E]
+>>>  Section start 2024/06/20 14:11:00.000
 """
 
 
@@ -34,3 +36,9 @@ def test_setupapi_first_install_times_in_utc(tmp_path):
     pixel = next(o for o in obs if "18D1" in o.data["instance"])
     assert pixel.timestamp == datetime(2024, 12, 1, 23, 30, tzinfo=timezone.utc)  # EST
     assert pixel.device_ids == []  # interface instance id is Windows-generated, not a serial
+    # A later section for the same instance is a driver update, not a first install.
+    later = [o for o in result.observations if o.event == "usb_driver_install"]
+    assert len(later) == 1 and later[0].data["first_for_instance"] is False
+    assert later[0].data["instance"] == iphone.data["instance"]
+    assert later[0].timestamp == datetime(2024, 6, 20, 18, 11, tzinfo=timezone.utc)  # EDT
+    assert iphone.data["first_for_instance"] is True
