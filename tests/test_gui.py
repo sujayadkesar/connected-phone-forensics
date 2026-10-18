@@ -1,6 +1,6 @@
 """Desktop app: a full demo scan through the GUI's background jobs, reopening, filtering, cancelling.
 
-Skipped when the GUI extra (PySide6, qtawesome) is not installed.
+Skipped when PySide6 or qtawesome cannot be imported.
 """
 
 import os
@@ -52,7 +52,8 @@ def _demo(window, tmp_path, monkeypatch):
 
     base = tmp_path / "demo"
     base.mkdir()
-    monkeypatch.setattr(home.tempfile, "mkdtemp", lambda **_kw: str(base))
+    # Only the demo folder: the scan's own temporary copies must still get folders of their own.
+    monkeypatch.setattr(home, "demo_folder", lambda: base)
     window.pages["new"]._demo()
     return base
 

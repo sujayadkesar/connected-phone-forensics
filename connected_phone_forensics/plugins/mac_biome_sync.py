@@ -48,7 +48,10 @@ def build_string(value) -> tuple[str | None, bool]:
             return str(int(value)), True
         if value > 0 and math.isfinite(value):
             exp = math.floor(math.log10(value))
-            digits = f"{value:.15e}".split("e")[0].replace(".", "").rstrip("0") or "0"
+            # 15 significant digits: all a double holds exactly. Older SQLite builds convert text
+            # to REAL slightly imprecisely (2.200000000000001e+241 for "22E240"); a 16th digit
+            # would carry that error into the build string.
+            digits = f"{value:.14e}".split("e")[0].replace(".", "").rstrip("0") or "0"
             major = digits[:2].ljust(2, "0")
             rest = digits[2:]
             # value = major.rest × 10^exp  ->  "<major><rest>E<exp - 1 - len(rest)>"

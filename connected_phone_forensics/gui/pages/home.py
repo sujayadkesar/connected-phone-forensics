@@ -37,6 +37,11 @@ from ..widgets import (
 OS_ORDER = ("windows", "macos", "linux")
 
 
+def demo_folder() -> Path:
+    """A new folder for the demo case's evidence and report."""
+    return Path(tempfile.mkdtemp(prefix="cpf-demo-"))
+
+
 def _default_output(evidence: Path | None, case_ref: str) -> Path:
     base = Path.home() / "Documents" / "Connected Phone Forensics"
     name = (case_ref.strip() or (evidence.name if evidence else "") or "case").replace("/", "-").replace("\\", "-")
@@ -374,7 +379,7 @@ class HomePage(QWidget):
         self._refresh_output()
 
     def _demo(self) -> None:
-        base = Path(tempfile.mkdtemp(prefix="cpf-demo-"))
+        base = demo_folder()
         params = self._params(base, base / "report", demo=True)
         params.case = {"case": "DEMO (synthetic data)", "examiner": self.examiner.text().strip()}
         params.plugin_ids = None

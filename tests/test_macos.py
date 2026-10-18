@@ -39,6 +39,17 @@ def test_build_string_undoes_numeric_affinity():
                                                   ("22F76", False)]
 
 
+
+def test_build_string_survives_imprecise_sqlite_conversion():
+    # Older SQLite builds (Python 3.10 on macOS) turn "22E240" into a REAL one bit off.
+    import math
+
+    from connected_phone_forensics.plugins.mac_biome_sync import build_string
+
+    exact = float("22E240")
+    for value in (exact, math.nextafter(exact, math.inf), math.nextafter(exact, 0)):
+        assert build_string(value) == ("22E240", True)
+
 def test_attributed_body():
     assert attributed_body_text(typedstream("Hello")) == "Hello"
     long = "x" * 300
