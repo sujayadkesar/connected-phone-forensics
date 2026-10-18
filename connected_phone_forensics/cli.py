@@ -96,10 +96,10 @@ def _cmd_validate(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="tether",
+        prog="cpf",
         description="Recover smartphone evidence from the computers a phone was connected to.",
     )
-    p.add_argument("--version", action="version", version=f"tether {__version__}")
+    p.add_argument("--version", action="version", version=f"cpf {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     s = sub.add_parser("scan", help="scan a mounted image or triage collection")
@@ -128,13 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     pl.add_argument("--json", action="store_true")
     pl.set_defaults(func=_cmd_plugins)
 
-    t = sub.add_parser("targets", help="print collection targets for the files Tether reads")
+    t = sub.add_parser("targets", help="print collection targets for the files Connected Phone Forensics reads")
     t.add_argument("--format", choices=["list", "kape", "velociraptor"], default="list")
     t.set_defaults(func=_cmd_targets)
 
     v = sub.add_parser("validate", help="score scan results against a ground-truth file")
     v.add_argument("truth", type=Path, help="ground-truth JSON (see docs/VALIDATION.md)")
-    v.add_argument("results", type=Path, help="output directory of 'tether scan'")
+    v.add_argument("results", type=Path, help="output directory of 'cpf scan'")
     v.add_argument("--json", action="store_true")
     v.set_defaults(func=_cmd_validate)
 

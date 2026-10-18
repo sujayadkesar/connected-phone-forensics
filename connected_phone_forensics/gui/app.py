@@ -1,4 +1,4 @@
-"""Start the desktop application: ``cpf-gui`` or ``python -m tether.gui``."""
+"""Start the desktop application: ``cpf-gui`` or ``python -m connected_phone_forensics.gui``."""
 
 from __future__ import annotations
 

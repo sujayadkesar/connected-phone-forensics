@@ -1,10 +1,10 @@
 import json
 
+from connected_phone_forensics.cli import main
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.output import write_all
+from connected_phone_forensics.validate import validate
 from tests.test_apple import UDID, _windows
-from tether.cli import main
-from tether.engine import scan
-from tether.output import write_all
-from tether.validate import validate
 
 
 def test_validate_scores_found_missing_time_and_device(tmp_path):

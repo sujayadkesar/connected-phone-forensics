@@ -2,7 +2,7 @@
 
 A :class:`Job` runs a function on Qt's thread pool and reports back through
 signals, which Qt delivers on the UI thread. The scan itself spreads its
-parsers over a thread pool of its own (see :func:`tether.engine.scan`).
+parsers over a thread pool of its own (see :func:`connected_phone_forensics.engine.scan`).
 """
 
 from __future__ import annotations

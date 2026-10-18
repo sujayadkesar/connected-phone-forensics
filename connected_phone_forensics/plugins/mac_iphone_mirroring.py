@@ -9,7 +9,7 @@
   code). Sevco Security found them under ``~/Library/Daemon Containers/<UUID>/
   Data/Library/Caches/``; macOS 15.1 removed them from Spotlight but not from
   disk. Newer releases use a ``generated_placeholders.noindex`` folder.
-  Tether looks for app stubs (Info.plist / iTunesMetadata.plist) in Daemon
+  Connected Phone Forensics looks for app stubs (Info.plist / iTunesMetadata.plist) in Daemon
   Containers and reports the inventory.
 
 The placeholder layout is only partly documented publicly; this parser is

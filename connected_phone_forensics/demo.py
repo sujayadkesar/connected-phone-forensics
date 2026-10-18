@@ -1,8 +1,8 @@
-"""Build a synthetic three-computer case and scan it: ``tether demo OUT``.
+"""Build a synthetic three-computer case and scan it: ``cpf demo OUT``.
 
 Persona "Alex Rivera" owns an iPhone 15 and a Pixel 8 and uses a Windows
 laptop, a MacBook and a Linux desktop. The same iPhone leaves different
-traces on each computer; Tether recognises it as one phone through its
+traces on each computer; Connected Phone Forensics recognises it as one phone through its
 UDID and Bluetooth address. Every byte is synthetic.
 """
 

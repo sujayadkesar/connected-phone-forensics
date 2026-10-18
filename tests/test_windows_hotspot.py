@@ -1,9 +1,13 @@
 import struct
 from datetime import datetime, timezone
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.plugins.win_hotspot import (
+    _gateway_hardware,
+    _hint_to_ssid,
+    ssid_phone_signal,
+)
 from tests.fixtures.regf import REG_BINARY, REG_MULTI_SZ, HiveBuilder
-from tether.engine import scan
-from tether.plugins.win_hotspot import _gateway_hardware, _hint_to_ssid, ssid_phone_signal
 
 UTC = timezone.utc
 NL = r"Microsoft\Windows NT\CurrentVersion\NetworkList"

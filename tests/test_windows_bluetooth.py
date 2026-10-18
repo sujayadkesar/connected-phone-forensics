@@ -1,9 +1,9 @@
 from datetime import timezone
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.plugins.win_bluetooth import decode_cod
+from connected_phone_forensics.timeutil import from_filetime
 from tests.fixtures.regf import REG_BINARY, REG_QWORD, HiveBuilder
-from tether.engine import scan
-from tether.plugins.win_bluetooth import decode_cod
-from tether.timeutil import from_filetime
 
 UTC = timezone.utc
 DEV = r"ControlSet001\Services\BTHPORT\Parameters\Devices"

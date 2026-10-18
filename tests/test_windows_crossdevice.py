@@ -1,6 +1,6 @@
-from tether._synth.regf import HiveBuilder
-from tether.engine import scan
-from tether.model import IdKind
+from connected_phone_forensics._synth.regf import HiveBuilder
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.model import IdKind
 
 DC = r"Software\Microsoft\Windows\CurrentVersion\TaskFlow\DeviceCache"
 

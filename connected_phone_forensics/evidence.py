@@ -1,6 +1,6 @@
 """Read-only access to evidence: mounted images and triage collections.
 
-Tether never writes inside the evidence. Paths are resolved case-insensitively
+Connected Phone Forensics never writes inside the evidence. Paths are resolved case-insensitively
 because Windows images are often mounted or extracted on case-sensitive Linux
 filesystems. A single input directory can hold several systems (e.g. a KAPE
 collection of C: next to a macOS Data volume); :func:`discover_systems` finds

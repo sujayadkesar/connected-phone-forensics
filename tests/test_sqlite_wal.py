@@ -1,7 +1,7 @@
 import shutil
 import sqlite3
 
-from tether.readers.sqlite_wal import read_wal, recover_table_versions
+from connected_phone_forensics.readers.sqlite_wal import read_wal, recover_table_versions
 
 
 def _scenario(tmp_path, page_size=4096):
@@ -95,9 +95,9 @@ def test_utf16_database_text_is_decoded(tmp_path):
 
 
 def test_recovery_failure_is_reported_not_silent(tmp_path, monkeypatch):
-    from tether.plugins import win_phonelink
-    from tether.readers.sqlite import open_db
-    from tether.readers.sqlite_wal import Recovery
+    from connected_phone_forensics.plugins import win_phonelink
+    from connected_phone_forensics.readers.sqlite import open_db
+    from connected_phone_forensics.readers.sqlite_wal import Recovery
 
     db, _ = _scenario(tmp_path)
     monkeypatch.setattr(win_phonelink, "recover_table_versions",

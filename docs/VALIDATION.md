@@ -1,15 +1,15 @@
-# Validating Tether with ground truth
+# Validating Connected Phone Forensics with ground truth
 
 Forensic tools must be shown to work before their output is relied on (for
 example ISO/IEC 17025 accreditation, or the UK Forensic Science Regulator's
-Code of Practice). Tether supports this directly:
+Code of Practice). Connected Phone Forensics supports this directly:
 
 1. You perform a scripted set of actions with real phones and a test
    computer, writing down **what** you did, **when**, and **with which
    device**.
-2. You image or collect the computer, run `tether scan`.
-3. `tether validate truth.json <scan output>` reports, item by item, what
-   Tether found, missed, timed wrongly or attributed to the wrong phone.
+2. You image or collect the computer, run `cpf scan`.
+3. `cpf validate truth.json <scan output>` reports, item by item, what
+   Connected Phone Forensics found, missed, timed wrongly or attributed to the wrong phone.
 
 Datasets made this way, published with their `truth.json`, are the most
 valuable contribution you can make to the project: they move parsers from
@@ -28,7 +28,7 @@ valuable contribution you can make to the project: they move parsers from
 * Write every action in a log as you do it (`2026-01-10T10:00:12Z plugged
   iPhone into USB-C port, tapped Trust`). The log becomes `truth.json`.
 * Use unique marker strings in content you create, e.g. send an SMS
-  `TETHER-GT-001`, so content can be matched unambiguously.
+  `CPF-GT-001`, so content can be matched unambiguously.
 
 ## Action scripts
 
@@ -37,7 +37,7 @@ minutes between actions so time tolerances can be tight.
 
 ### iPhone ↔ Windows
 
-| # | Action | Expected Tether events |
+| # | Action | Expected Connected Phone Forensics events |
 |---|---|---|
 | 1 | Install Apple Devices (or iTunes). Plug the iPhone in over USB, unlock, tap **Trust**, enter passcode. | `win_usb_phones: usb_first_install`, `win_apple_pairing: pairing_certificate_issued` |
 | 2 | Make a local backup (unencrypted), then an encrypted one. | `win_apple_backups: device_backup` (×2, one encrypted) |
@@ -48,7 +48,7 @@ minutes between actions so time tolerances can be tight.
 
 ### Android ↔ Windows
 
-| # | Action | Expected Tether events |
+| # | Action | Expected Connected Phone Forensics events |
 |---|---|---|
 | 1 | Plug in over USB, choose **File transfer (MTP)**. Copy one photo off the phone. | `win_usb_phones: usb_first_install` (model from MTP interface) |
 | 2 | Enable USB debugging, run `adb devices`, accept the RSA prompt. | `win_usb_phones` with `adb` signal |
@@ -59,14 +59,14 @@ minutes between actions so time tolerances can be tight.
 
 ### iPhone ↔ macOS
 
-| # | Action | Expected Tether events |
+| # | Action | Expected Connected Phone Forensics events |
 |---|---|---|
 | 1 | Connect over USB, Trust, back up in Finder. | `mac_apple_pairing`, `mac_apple_backups` |
 | 2 | Sign in to the same Apple Account on both; use iPhone Mirroring, Handoff, Universal Clipboard; receive an SMS via Text Message Forwarding. | Continuity parsers (when available) |
 
 ### Android / iPhone ↔ Linux
 
-| # | Action | Expected Tether events |
+| # | Action | Expected Connected Phone Forensics events |
 |---|---|---|
 | 1 | Pair over Bluetooth. | `linux_bluetooth: bt_pairing_record` |
 | 2 | Discover (scan) a second phone without pairing. | `linux_bluetooth: bt_cached_device` |
@@ -92,15 +92,15 @@ minutes between actions so time tolerances can be tight.
 }
 ```
 
-Identifier keys under `devices` are Tether identifier kinds: `udid`,
+Identifier keys under `devices` are Connected Phone Forensics identifier kinds: `udid`,
 `serial`, `imei`, `bt_mac`, `wifi_mac`, `usb_serial`, `phone_number`,
 `device_name`.
 
 Run:
 
 ```
-tether scan /mnt/gt001 -o gt001_out
-tether validate truth.json gt001_out
+cpf scan /mnt/gt001 -o gt001_out
+cpf validate truth.json gt001_out
 ```
 
 The report lists every item as `found`, `missing`, `time_off` (a matching
@@ -111,6 +111,6 @@ correlation gap.
 ## Publishing a dataset
 
 Share the collection (KAPE/UAC/Velociraptor output, or an image), the action
-log, `truth.json` and the Tether version you validated with. Remove anything
+log, `truth.json` and the Connected Phone Forensics version you validated with. Remove anything
 you would not want public: test accounts only, no personal photos, no
 real contacts.

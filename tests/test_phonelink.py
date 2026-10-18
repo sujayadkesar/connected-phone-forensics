@@ -2,10 +2,10 @@
 
 from datetime import datetime, timezone
 
-from tether._synth.phonelink import build_phonelink_profile
-from tether.engine import scan
-from tether.model import IdKind
-from tether.output import write_all
+from connected_phone_forensics._synth.phonelink import build_phonelink_profile
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.model import IdKind
+from connected_phone_forensics.output import write_all
 
 UTC = timezone.utc
 BASE = datetime(2025, 6, 14, 18, 0, tzinfo=UTC)

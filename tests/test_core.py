@@ -4,11 +4,19 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tether import timeutil
-from tether.correlate import build_graph
-from tether.evidence import EvidenceFS, discover_systems, display_path, long_path
-from tether.model import Channel, Identifier, IdKind, Observation, Provenance, ident, normalize
-from tether.readers.sqlite import open_db
+from connected_phone_forensics import timeutil
+from connected_phone_forensics.correlate import build_graph
+from connected_phone_forensics.evidence import EvidenceFS, discover_systems, display_path, long_path
+from connected_phone_forensics.model import (
+    Channel,
+    Identifier,
+    IdKind,
+    Observation,
+    Provenance,
+    ident,
+    normalize,
+)
+from connected_phone_forensics.readers.sqlite import open_db
 
 UTC = timezone.utc
 
@@ -237,8 +245,8 @@ def test_mac_heuristics_suggest_but_never_merge():
 def test_examiner_assertion_merges_and_is_explained(tmp_path):
     import pytest as _pytest
 
-    from tether.demo import IPHONE_BT, IPHONE_UDID, build_demo_evidence
-    from tether.engine import parse_assertion, scan
+    from connected_phone_forensics.demo import IPHONE_BT, IPHONE_UDID, build_demo_evidence
+    from connected_phone_forensics.engine import parse_assertion, scan
 
     with _pytest.raises(ValueError):
         parse_assertion("device_name=Jane,udid=X")  # weak kinds cannot be asserted
@@ -267,7 +275,7 @@ def test_phone_numbers_match_across_formats_and_sim_is_one_signal():
 
 
 def test_x509_utctime_pivot_and_offsets():
-    from tether.readers.x509 import _time
+    from connected_phone_forensics.readers.x509 import _time
 
     # RFC 5280: YY >= 50 is 19YY, else 20YY. Python's %y pivots at 69 instead, so 50-68 differ.
     assert _time(0x17, b"500101000000Z").year == 1950
@@ -278,7 +286,7 @@ def test_x509_utctime_pivot_and_offsets():
 
 
 def test_csv_cells_cannot_become_formulas():
-    from tether.output.structured import csv_safe
+    from connected_phone_forensics.output.structured import csv_safe
 
     assert csv_safe("=HYPERLINK(\"http://x\")") == "'=HYPERLINK(\"http://x\")"
     assert csv_safe("@SUM(A1)") == "'@SUM(A1)"

@@ -29,7 +29,7 @@ class _LiveDB:
     """A WAL-mode database whose files are copied while the WAL is still live."""
 
     def __init__(self, name: str):
-        self.tmp = Path(tempfile.mkdtemp(prefix="tether-synth-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="cpf-synth-"))
         self.path = self.tmp / name
         self.c = sqlite3.connect(self.path, isolation_level=None)
         self.c.execute("PRAGMA journal_mode=WAL")

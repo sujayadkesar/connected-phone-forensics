@@ -2,7 +2,7 @@
 
 The synthetic fixture mirrors the structure observed in a real Windows SYSTEM
 hive with a Samsung Galaxy S5 (SM-G900V) attached over MTP (Eric Zimmerman's
-sample hives in the DFIR Artifact Museum). Set TETHER_REALDATA to a folder
+sample hives in the DFIR Artifact Museum). Set CPF_REALDATA to a folder
 containing EZ_W7RegistryHives/SYSTEM to also run against the real hive.
 """
 
@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.model import IdKind
+from connected_phone_forensics.timeutil import from_filetime
 from tests.fixtures.regf import DEVPROP_FILETIME, REG_MULTI_SZ, REG_SZ, HiveBuilder
-from tether.engine import scan
-from tether.model import IdKind
-from tether.timeutil import from_filetime
 
 USB = r"ControlSet001\Enum\USB"
 PROPS = r"Properties\{83da6326-97a6-4088-9453-a1923f573b29}"
@@ -98,7 +98,7 @@ def test_usb_phones_grouped_by_container(tmp_path):
 def test_outputs_written(tmp_path):
     import json
 
-    from tether.output import write_all
+    from connected_phone_forensics.output import write_all
 
     _case(tmp_path / "ev" / "C")
     result = scan(tmp_path / "ev")
@@ -114,10 +114,10 @@ def test_outputs_written(tmp_path):
     assert "SM-G900V" in html and "<script" in html and "http" not in html.split("<main>")[0]
 
 
-REAL = os.environ.get("TETHER_REALDATA")
+REAL = os.environ.get("CPF_REALDATA")
 
 
-@pytest.mark.skipif(not REAL, reason="TETHER_REALDATA not set")
+@pytest.mark.skipif(not REAL, reason="CPF_REALDATA not set")
 def test_real_ez_win7_hive(tmp_path):
     src = Path(REAL) / "EZ_W7RegistryHives"
     cfg = tmp_path / "C" / "Windows" / "System32" / "config"

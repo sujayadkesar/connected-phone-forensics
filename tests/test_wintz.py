@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from tether.wintz import WindowsTimezone
+from connected_phone_forensics.wintz import WindowsTimezone
 
 
 class _Key(dict):

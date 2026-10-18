@@ -161,7 +161,7 @@ def _scan(input_path, plugin_ids, workdir, case, say, emit, capture, export_dir,
     plugins_run: list[dict] = []
 
     contexts: list[Context | None] = [None] * len(tasks)
-    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="tether-parser") as pool:
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="cpf-parser") as pool:
         futures = {pool.submit(_run_plugin, cls, system, workdir, export_dir, capture, cancel): i
                    for i, (system, cls) in enumerate(tasks)}
         for done, fut in enumerate(as_completed(futures), 1):

@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.plugins.kdeconnect import _identity_created
 from tests.fixtures.certs import make_cert_pem
-from tether.engine import scan
-from tether.plugins.kdeconnect import _identity_created
 
 UTC = timezone.utc
 

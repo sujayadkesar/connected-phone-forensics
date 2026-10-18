@@ -1,9 +1,9 @@
 """Core data model: identifiers, observations and provenance.
 
-Every fact Tether reports is an :class:`Observation` that carries a
+Every fact Connected Phone Forensics reports is an :class:`Observation` that carries a
 :class:`Provenance` pointing at the exact file and record it came from.
 Observations name the phone they concern through :class:`Identifier`
-values; the correlation stage (``tether.correlate``) merges identifiers into
+values; the correlation stage (``connected_phone_forensics.correlate``) merges identifiers into
 devices using only identifiers strong enough to stand up to scrutiny.
 """
 

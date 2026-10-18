@@ -7,7 +7,7 @@ up. The database is ``~/Library/Group Containers/group.com.apple.usernoted/db2/d
 where ``data`` is a binary plist with ``req.titl``/``subt``/``body``.
 
 How a forwarded iPhone notification is marked has not been publicly
-documented. Tether flags a notification as *probably from the iPhone* when
+documented. Connected Phone Forensics flags a notification as *probably from the iPhone* when
 its app is not installed on this Mac (no matching ``CFBundleIdentifier`` in
 /Applications, /System/Applications or ~/Applications), which is an
 inference, labelled as such. Times are Mac absolute seconds.

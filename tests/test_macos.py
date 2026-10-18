@@ -3,9 +3,9 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from tether.engine import scan
-from tether.model import IdKind
-from tether.plugins.mac_messages import attributed_body_text
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.model import IdKind
+from connected_phone_forensics.plugins.mac_messages import attributed_body_text
 
 UTC = timezone.utc
 COCOA = datetime(2001, 1, 1, tzinfo=UTC)
@@ -26,7 +26,7 @@ def typedstream(text: str) -> bytes:
 
 
 def test_build_string_undoes_numeric_affinity():
-    from tether.plugins.mac_biome_sync import build_string
+    from connected_phone_forensics.plugins.mac_biome_sync import build_string
 
     c = sqlite3.connect(":memory:")
     c.execute("CREATE TABLE t(model NUMERIC)")

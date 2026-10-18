@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from tether._synth.phonelink import ft
-from tether.engine import scan
-from tether.plugins.win_wpn import toast_text
+from connected_phone_forensics._synth.phonelink import ft
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.plugins.win_wpn import toast_text
 
 UTC = timezone.utc
 TOAST = ('<toast launch="phonelink://message?thread=10"><visual><binding template="ToastGeneric">'
@@ -65,10 +65,10 @@ def test_wpn_phonelink_toasts_and_recovery(tmp_path):
     assert all("Store" not in o.message for o in result.observations)
 
 
-REAL = os.environ.get("TETHER_MUSEUM")
+REAL = os.environ.get("CPF_MUSEUM")
 
 
-@pytest.mark.skipif(not REAL, reason="TETHER_MUSEUM not set")
+@pytest.mark.skipif(not REAL, reason="CPF_MUSEUM not set")
 @pytest.mark.parametrize("ver", ["Win10", "Win11"])
 def test_real_wpndatabase(tmp_path, ver):
     src = Path(REAL) / "Windows" / "WindowsNotificationDB" / ver / "wpndatabase.db"

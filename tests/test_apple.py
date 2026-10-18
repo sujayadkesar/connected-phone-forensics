@@ -9,9 +9,9 @@ real data.
 import plistlib
 from datetime import datetime, timezone
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.model import IdKind
 from tests.fixtures.certs import make_cert_pem
-from tether.engine import scan
-from tether.model import IdKind
 
 UTC = timezone.utc
 UDID = "00008110-000A1B2C3D4E801E"

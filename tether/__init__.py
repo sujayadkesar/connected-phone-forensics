@@ -1,3 +1,0 @@
-"""Tether: recover smartphone evidence from the computers a phone was connected to."""
-
-__version__ = "0.1.0.dev0"

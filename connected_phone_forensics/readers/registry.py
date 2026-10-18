@@ -3,7 +3,7 @@
 Hives copied from a live or crashed system are often "dirty": recent writes
 sit in the ``.LOG1``/``.LOG2`` transaction logs. Logs are also left behind on
 clean hives, full of entries that were flushed long ago, so
-:mod:`tether.readers.regf_log` decides what to apply. Recovery happens on a
+:mod:`connected_phone_forensics.readers.regf_log` decides what to apply. Recovery happens on a
 copy in a work directory; the evidence is never modified.
 """
 
@@ -150,7 +150,7 @@ def open_hive(path: Path, workdir: Path | None = None) -> Iterator[Hive]:
     if result.data is None:
         yield Hive(RegistryHive(str(path)), path, result, logs)
         return
-    tmp = Path(tempfile.mkdtemp(prefix="tether-hive-", dir=workdir))
+    tmp = Path(tempfile.mkdtemp(prefix="cpf-hive-", dir=workdir))
     try:
         recovered = tmp / (path.name + ".recovered")
         recovered.write_bytes(result.data)

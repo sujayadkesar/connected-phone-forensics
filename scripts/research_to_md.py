@@ -31,7 +31,7 @@ def _list(items) -> str:
 def render(cluster: dict) -> str:
     key = cluster["cluster"]
     lines = [f"# {TITLES.get(key, key)}", "",
-             "> Research notes compiled for Tether from public sources and open-source parser code, then "
+             "> Research notes compiled for Connected Phone Forensics from public sources and open-source parser code, then "
              "adversarially fact-checked. Claims are marked by confidence; anything marked as inference or "
              "undocumented needs validation on real devices (see docs/VALIDATION.md).", "",
              "## Summary", "", cluster.get("cluster_summary", ""), "",
@@ -77,7 +77,7 @@ def main(src: str, dst: str) -> None:
     out.mkdir(parents=True, exist_ok=True)
     clusters = [json.loads(p.read_text()) for p in sorted(Path(src).glob("research_*.json"))]
     index = ["# Research notes", "",
-             "Everything Tether knows about where phones leave traces on computers, by channel. These notes are "
+             "Everything Connected Phone Forensics knows about where phones leave traces on computers, by channel. These notes are "
              "the basis of the parsers and are published so others can check, reuse and extend them.", "",
              "| Channel | Artifacts | Undocumented |", "|---|---|---|"]
     gaps = []

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from tether.engine import scan
+from connected_phone_forensics.engine import scan
 
 UTC = timezone.utc
 

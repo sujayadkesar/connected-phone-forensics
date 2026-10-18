@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
+from connected_phone_forensics.engine import scan
 from tests.test_windows_hotspot import _build
-from tether.engine import scan
 
 LOG = """[Device Install Log]
      OS Version = 10.0.22631

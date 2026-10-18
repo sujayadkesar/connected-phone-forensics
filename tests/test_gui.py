@@ -18,8 +18,8 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 @pytest.fixture(scope="module")
 def app():
-    from tether.gui import theme
-    from tether.gui.widgets import THEME
+    from connected_phone_forensics.gui import theme
+    from connected_phone_forensics.gui.widgets import THEME
 
     qt_app = QApplication.instance() or QApplication([])
     THEME.fonts = theme.load_fonts()
@@ -28,7 +28,7 @@ def app():
 
 @pytest.fixture
 def window(app, tmp_path):
-    from tether.gui.window import MainWindow
+    from connected_phone_forensics.gui.window import MainWindow
 
     w = MainWindow(QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat))
     w.apply_theme("dark")
@@ -48,7 +48,7 @@ def _wait(app, condition, timeout=120.0) -> bool:
 
 
 def _demo(window, tmp_path, monkeypatch):
-    import tether.gui.pages.home as home
+    import connected_phone_forensics.gui.pages.home as home
 
     base = tmp_path / "demo"
     base.mkdir()
@@ -58,7 +58,7 @@ def _demo(window, tmp_path, monkeypatch):
 
 
 def test_demo_scan_end_to_end(app, window, tmp_path, monkeypatch):
-    from tether.gui.casedata import CaseData
+    from connected_phone_forensics.gui.casedata import CaseData
 
     base = _demo(window, tmp_path, monkeypatch)
     assert window.stack.currentWidget() is window.pages["scan"]
@@ -113,7 +113,7 @@ def test_open_rejects_a_folder_without_results(app, window, tmp_path, monkeypatc
 def test_record_model_filters_and_sorts():
     from PySide6.QtCore import Qt
 
-    from tether.gui.models import Column, RecordModel
+    from connected_phone_forensics.gui.models import Column, RecordModel
 
     model = RecordModel([Column("n", lambda r: str(r["n"]), sort_key=lambda r: r["n"])])
     model.set_rows([{"n": n} for n in (3, 1, 2)])
@@ -131,9 +131,9 @@ def test_background_results_survive_garbage_collection(app, window, tmp_path, mo
     # result has reached the UI thread, or the result is silently lost.
     import gc
 
-    from tether.demo import build_demo_evidence
-    from tether.engine import scan
-    from tether.output import write_all
+    from connected_phone_forensics.demo import build_demo_evidence
+    from connected_phone_forensics.engine import scan
+    from connected_phone_forensics.output import write_all
 
     evidence = build_demo_evidence(tmp_path / "case")
     home = window.pages["new"]

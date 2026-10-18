@@ -3,7 +3,7 @@
 Opening a database in place is unsafe: SQLite may checkpoint the ``-wal``
 file into the main database or delete it, changing the evidence. Opening with
 ``immutable=1`` is safe but silently ignores the WAL, losing the newest
-records. Tether instead copies the database together with its ``-wal`` and
+records. Connected Phone Forensics instead copies the database together with its ``-wal`` and
 ``-shm`` files into a private work directory and opens the copy, so committed
 WAL transactions are included and the original is never touched.
 """
@@ -111,7 +111,7 @@ def open_db(path: Path, workdir: Path | None = None) -> Iterator[SafeDB]:
     only, through plain file copies.
     """
     path = Path(path)
-    tmp = Path(tempfile.mkdtemp(prefix="tether-db-", dir=workdir))
+    tmp = Path(tempfile.mkdtemp(prefix="cpf-db-", dir=workdir))
     try:
         dst = tmp / path.name
         shutil.copyfile(path, dst)

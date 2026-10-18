@@ -2,7 +2,7 @@
 
 A ground-truth file records what was actually done with real devices while
 the dataset was created (see docs/VALIDATION.md): which phones, their
-identifiers, and the actions with their wall-clock times. ``tether validate``
+identifiers, and the actions with their wall-clock times. ``cpf validate``
 checks every expected item against a scan's output and reports which were
 found, missed, or attributed to the wrong device, so a lab can show how a
 parser version performs before relying on it.
@@ -17,7 +17,7 @@ Ground truth (JSON)::
       "expected": [
         {"id": "usb-first", "device": "phone1", "event": "usb_first_install",
          "time": "2026-01-10T10:00:00Z", "tolerance_seconds": 120},
-        {"id": "sms", "device": "phone1", "channel": "phone_link", "contains": "TETHER-GT-001"}
+        {"id": "sms", "device": "phone1", "channel": "phone_link", "contains": "CPF-GT-001"}
       ]
     }
 

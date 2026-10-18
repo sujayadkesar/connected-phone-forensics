@@ -21,7 +21,7 @@ Rows deleted or changed since the last checkpoint (dismissed notifications,
 deleted messages, earlier versions of edited rows) are recovered from the
 ``-wal`` file and the main database and reported as ``*_recovered`` events.
 Profiles persist after a phone is unlinked, so a profile proves the phone was
-linked at some time, not that it still is. Databases Tether does not know
+linked at some time, not that it still is. Databases Connected Phone Forensics does not know
 (e.g. ``deviceData.db``) are listed as unrecognised with their tables.
 
 Phone Link for iPhone (Bluetooth MAP/PBAP/HFP) keeps little or nothing on
@@ -192,7 +192,7 @@ class WindowsPhoneLink(Plugin):
             if name not in _HANDLED:
                 with ctx.file_scope(path), ctx.sqlite(path) as db:
                     ctx.cover(path, UNRECOGNISED,
-                              note="database not parsed by Tether; tables: " + ", ".join(
+                              note="database not parsed by Connected Phone Forensics; tables: " + ", ".join(
                                   f"{t}({len(c)} cols)" for t, c in db.schema.tables.items()))
         mtime = from_unix(prof.folder.stat().st_mtime)
         ctx.emit(Observation(

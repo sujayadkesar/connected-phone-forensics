@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from tether.engine import scan
+from connected_phone_forensics.engine import scan
 
 INFO = """[General]
 Name=Jane's iPhone

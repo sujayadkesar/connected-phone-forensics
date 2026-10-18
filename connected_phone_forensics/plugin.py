@@ -94,7 +94,7 @@ def register(cls: type[Plugin]) -> type[Plugin]:
 
 
 def load_plugins() -> dict[str, type[Plugin]]:
-    """Import every module under tether.plugins so their @register calls run."""
+    """Import every module under connected_phone_forensics.plugins so their @register calls run."""
     from . import plugins as pkg
 
     for mod in pkgutil.walk_packages(pkg.__path__, prefix=pkg.__name__ + "."):

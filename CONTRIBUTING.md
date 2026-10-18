@@ -1,6 +1,6 @@
-# Contributing to Tether
+# Contributing to Connected Phone Forensics
 
-Tether is only as good as its parsers, and every parser is only as good as the
+Connected Phone Forensics is only as good as its parsers, and every parser is only as good as the
 data it was checked against. Contributions of **sample data and validation
 results are as valuable as code**.
 
@@ -18,7 +18,7 @@ results are as valuable as code**.
    precise enough to re-find the record by hand: `table=messages rowid=42`,
    `SYSTEM:\ControlSet001\...\LastSeen`, `plist:$.DeviceCertificate`.
 4. **Timestamps are UTC and say what they mean.** Convert with
-   `tether.timeutil` (exact integer arithmetic, rejects implausible values).
+   `connected_phone_forensics.timeutil` (exact integer arithmetic, rejects implausible values).
    Set `timestamp_desc` to the artifact's own meaning ("Last Connected"), and
    set `time_source="filesystem"` for file metadata times.
 5. **Identify phones with the right identifier kinds.** Hardware or vendor ids
@@ -33,9 +33,9 @@ results are as valuable as code**.
 ## Writing a plugin
 
 ```python
-from tether.model import Channel, IdKind, Observation, Validation, ident
-from tether.plugin import Context, Plugin, register
-from tether.timeutil import from_cocoa
+from connected_phone_forensics.model import Channel, IdKind, Observation, Validation, ident
+from connected_phone_forensics.plugin import Context, Plugin, register
+from connected_phone_forensics.timeutil import from_cocoa
 
 
 @register
@@ -44,8 +44,8 @@ class MacExample(Plugin):
     name = "Example artifact"
     os = "macos"                           # windows | macos | linux
     channel = Channel.CONTINUITY
-    description = __doc__ or ""            # shown in `tether docs`
-    paths = ["Users/*/Library/Example/example.db"]  # drives `tether targets`
+    description = __doc__ or ""            # shown in `cpf docs`
+    paths = ["Users/*/Library/Example/example.db"]  # drives `cpf targets`
     references = ["https://..."]           # where the format is documented
     validation = Validation.SYNTHETIC
 
@@ -68,7 +68,7 @@ class MacExample(Plugin):
                     n[0] += 1
 ```
 
-Drop the module into `tether/plugins/`; it is discovered automatically.
+Drop the module into `connected_phone_forensics/plugins/`; it is discovered automatically.
 
 ## Validation levels
 
@@ -90,5 +90,5 @@ public sample, or a ground-truth dataset plus the expected output.
   `tests/fixtures/certs.py` for certificates) so every byte of test data is
   reviewable. Do not commit evidence of unknown provenance or containing real
   people's data.
-* Real-data tests read from `TETHER_REALDATA` and are skipped when it is unset.
-* `python -m pytest` and `python -m ruff check tether tests` must pass.
+* Real-data tests read from `CPF_REALDATA` and are skipped when it is unset.
+* `python -m pytest` and `python -m ruff check connected_phone_forensics tests` must pass.

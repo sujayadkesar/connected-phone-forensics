@@ -53,7 +53,7 @@ border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var
 """
 
 _JS = r"""
-const D=JSON.parse(document.getElementById('tether-data').textContent);
+const D=JSON.parse(document.getElementById('cpf-data').textContent);
 const rows=D.rows.map(a=>{const o={};D.keys.forEach((k,i)=>{o[k]=(k in D.dict)?D.dict[k][a[i]]:a[i];});return o;});
 const tb=document.querySelector('#tl tbody');const PAGE=500;let shown=0,filtered=rows;
 const q=document.getElementById('q'),fd=document.getElementById('fdev'),fc=document.getElementById('fch'),fa=document.getElementById('fart');
@@ -175,7 +175,7 @@ def _coverage(result: ScanResult) -> str:
     return f"""
 <p>{escape(summary)}</p>
 <p class="note">Every file a parser opened is listed. <b>unrecognised</b> means the file exists but its format or
-schema is not one Tether knows: it was <i>not</i> parsed and should be examined manually. Nothing is skipped silently.</p>
+schema is not one Connected Phone Forensics knows: it was <i>not</i> parsed and should be examined manually. Nothing is skipped silently.</p>
 <table><thead><tr><th>Parser</th><th>Computer</th><th>File</th><th>Status</th><th>Records</th><th>Note</th></tr></thead>
 <tbody>{rows or '<tr><td colspan="6" class="muted">none</td></tr>'}</tbody></table>
 <details><summary>Parsers run and their validation level</summary>
@@ -261,10 +261,10 @@ def write_html(result: ScanResult, path: Path) -> Path:
                   '<p class="note">Long values are shortened in this view; full values are in timeline.jsonl.</p>')
     html = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tether report</title><style>{_CSS}</style></head><body>
+<title>Connected Phone Forensics report</title><style>{_CSS}</style></head><body>
 <header>
-  <h1>Tether report</h1>
-  <div class="muted">{case}Generated {_fmt(result.finished)} by Tether {escape(result.tool_version)} ·
+  <h1>Connected Phone Forensics report</h1>
+  <div class="muted">{case}Generated {_fmt(result.finished)} by Connected Phone Forensics {escape(result.tool_version)} ·
   input <span class="mono">{escape(result.input_path)}</span></div>
   <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#timeline">Timeline</a>
   <a href="#coverage">Coverage</a><a href="#method">Method</a></nav>
@@ -305,7 +305,7 @@ USB serial, vendor device ids) asserted together by a single record; each merge 
 linked". Device names, models, phone numbers and accounts never merge records; shared values are shown as possible matches.
 Each parser's validation level (synthetic, public_sample, ground_truth) is listed under Coverage.</p>
 </main>
-<script type="application/json" id="tether-data">{data}</script>
+<script type="application/json" id="cpf-data">{data}</script>
 <script>{_JS}</script>
 </body></html>"""
     path.write_text(html, encoding="utf-8")

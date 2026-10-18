@@ -56,7 +56,7 @@ def observation_record(obs: Observation, device_id: str | None, device_label: st
         "timestamp": int(obs.timestamp.timestamp() * 1_000_000) if obs.timestamp else None,
         "timestamp_desc": obs.timestamp_desc or "Not a time",
         "time_source": obs.time_source,
-        "data_type": f"tether:{obs.artifact}:{obs.event}",
+        "data_type": f"cpf:{obs.artifact}:{obs.event}",
         "artifact": obs.artifact,
         "event": obs.event,
         "channel": obs.channel.value,
@@ -118,7 +118,7 @@ def write_structured(result: ScanResult, outdir: Path) -> list[Path]:
 
     p_man = outdir / "manifest.json"
     manifest = {
-        "tool": "tether",
+        "tool": "connected-phone-forensics",
         "tool_version": result.tool_version,
         "python": sys.version.split()[0],
         "command": sys.argv,

@@ -14,7 +14,7 @@ evidence dir ──► discover_systems ──► SystemRoot (windows | macos | 
                  output: report.html, timeline.jsonl/csv, devices.json, coverage.csv, manifest.json
 ```
 
-## Evidence access (`tether/evidence.py`)
+## Evidence access (`connected_phone_forensics/evidence.py`)
 
 `EvidenceFS` is a read-only view of a directory: a mounted image, an
 extracted image, or a triage collection. Lookups are case-insensitive so a
@@ -25,7 +25,7 @@ Data volume, a Linux root. Each root becomes a `SystemRoot`, labelled with
 the computer name recorded in the evidence (Windows `ComputerName`, macOS
 `SystemConfiguration`, Linux `/etc/hostname`).
 
-## Readers (`tether/readers/`)
+## Readers (`connected_phone_forensics/readers/`)
 
 | Reader | Guarantee |
 |---|---|
@@ -35,15 +35,15 @@ the computer name recorded in the evidence (Windows `ComputerName`, macOS
 | `plist` | Binary/XML plists and NSKeyedArchiver archives. |
 | `x509` | Validity dates and names from PEM/DER certificates, standard library only. |
 
-## Plugins (`tether/plugins/`)
+## Plugins (`connected_phone_forensics/plugins/`)
 
 A plugin is a class registered with `@register`. It declares:
 
 * `os`: the computer OS it applies to;
 * `channel`: how the phone reached the computer (usb, bluetooth, pairing,
   backup, phone_link, continuity, account_sync, …);
-* `paths`: glob patterns of files it reads, which drive `tether targets`
-  and `tether docs`;
+* `paths`: glob patterns of files it reads, which drive `cpf targets`
+  and `cpf docs`;
 * `validation`: `synthetic`, `public_sample` or `ground_truth`.
 
 Plugins read evidence only through the `Context`, which hashes every file,
@@ -51,7 +51,7 @@ records coverage for every file touched (`parsed`, `empty`, `unrecognised`,
 `error`), isolates per-file failures, and exports recovered content (e.g.
 cached photos) with hashes.
 
-## Data model (`tether/model.py`)
+## Data model (`connected_phone_forensics/model.py`)
 
 An `Observation` is one fact with a UTC timestamp (or none), a
 `timestamp_desc`, a `time_source` (`artifact` or `filesystem`), the
@@ -66,7 +66,7 @@ Identifiers have a kind and a strength:
 | link | phone number, ICCID, account | reported as possible matches only |
 | weak | device name, model, OS version | descriptive; device names feed possible matches |
 
-## Correlation (`tether/correlate.py`)
+## Correlation (`connected_phone_forensics/correlate.py`)
 
 Union-find over strong identifiers that a single record asserts together.
 Every union keeps the record that caused it, which the report shows under
@@ -78,7 +78,7 @@ the examiner. Nothing is merged on those heuristics; an examiner can
 record a conclusion with `--assume-same`, which appears as an explicit
 merge reason and in the manifest.
 
-## Outputs (`tether/output/`)
+## Outputs (`connected_phone_forensics/output/`)
 
 * `report.html`: a single offline file. Device cards and coverage are
   rendered statically. The timeline is column-encoded JSON rendered by a
@@ -91,7 +91,7 @@ merge reason and in the manifest.
   validation levels, examiner assertions, warnings, and the SHA-256 of
   every evidence file read.
 
-## Scan engine (`tether/engine.py`)
+## Scan engine (`connected_phone_forensics/engine.py`)
 
 `scan()` runs every (system, plugin) pair on a thread pool (`workers`,
 default one per CPU up to 8; `--workers 1` runs them one at a time). Results
@@ -103,7 +103,7 @@ Callers get one-line `progress` messages and structured `on_event` events
 stop a scan with a `cancel` event (`ScanCancelled` is raised once the
 running parsers finish; nothing is written).
 
-## Desktop app (`tether/gui/`)
+## Desktop app (`connected_phone_forensics/gui/`)
 
 PySide6, optional (`pip install -e ".[gui]"`, entry point `cpf-gui`).
 

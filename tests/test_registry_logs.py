@@ -8,6 +8,10 @@ import struct
 
 import pytest
 
+from connected_phone_forensics.engine import scan
+from connected_phone_forensics.readers.regf_log import APPLIED, CLEAN, NOT_APPLIED, marvin32, replay
+from connected_phone_forensics.readers.registry import open_hive
+from connected_phone_forensics.timeutil import from_filetime
 from tests.fixtures.regf import (
     REG_BINARY,
     REG_QWORD,
@@ -17,10 +21,6 @@ from tests.fixtures.regf import (
     old_format_log,
     set_sequence,
 )
-from tether.engine import scan
-from tether.readers.regf_log import APPLIED, CLEAN, NOT_APPLIED, marvin32, replay
-from tether.readers.registry import open_hive
-from tether.timeutil import from_filetime
 
 DEV = r"ControlSet001\Services\BTHPORT\Parameters\Devices"
 PHONE = f"\\{DEV}\\a4c337112233"

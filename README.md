@@ -1,4 +1,4 @@
-# Tether
+# Connected Phone Forensics
 
 **Recover smartphone evidence from the computers a phone was connected to.**
 
@@ -9,7 +9,7 @@ suspect's laptop is usually easier, and phones leave a trail on every
 computer they touch: pairing records, backups, USB and Bluetooth history,
 hotspot connections, companion apps.
 
-Tether finds that trail on Windows, macOS and Linux evidence and answers:
+Connected Phone Forensics finds that trail on Windows, macOS and Linux evidence and answers:
 
 * **Which phones touched this computer?** Each phone is identified by its
   UDID, serial, IMEI, Bluetooth/Wi-Fi MAC or USB serial, with every
@@ -23,12 +23,12 @@ It correlates everything into a **device graph** and writes a self-contained
 HTML report, a Timesketch-ready timeline and a chain-of-custody manifest.
 
 ```
-pip install tether-dfir
-tether scan /mnt/evidence -o case42_tether --case 42 --examiner "A. Examiner"
+pip install connected-phone-forensics
+cpf scan /mnt/evidence -o case42_cpf --case 42 --examiner "A. Examiner"
 ```
 
 Input is a mounted image, an extracted image, or a triage collection (KAPE,
-Velociraptor, UAC). Tether finds every Windows, macOS and Linux system root
+Velociraptor, UAC). Connected Phone Forensics finds every Windows, macOS and Linux system root
 inside it.
 
 ## What it parses
@@ -55,7 +55,7 @@ inside it.
 | `linux_bluetooth` | Linux | BlueZ pairings and discovered devices | synthetic |
 | `*_kdeconnect` | Linux / Windows / macOS | KDE Connect paired phones; when the app on the phone created its identity, and whether that was the Android or the iOS app | synthetic |
 
-Run `tether plugins` for the current list and `tether docs` for a full
+Run `cpf plugins` for the current list and `cpf docs` for a full
 artifact reference generated from the parsers themselves.
 
 **Validation levels are printed in every report.** `synthetic` means tested
@@ -65,7 +65,7 @@ means tested against data created on real devices with recorded actions.
 See [docs/VALIDATION.md](docs/VALIDATION.md); contributions of ground-truth
 datasets are the most valuable help the project can get.
 
-## How Tether treats evidence
+## How Connected Phone Forensics treats evidence
 
 * **Read-only.** SQLite databases are copied together with their `-wal`
   and `-shm` files and the copy is opened, so the original is never modified
@@ -76,7 +76,7 @@ datasets are the most valuable help the project can get.
 * **Hashed.** Every evidence file read is SHA-256 hashed; hashes, tool
   version and command line go into `manifest.json`.
 * **Nothing skipped silently.** Every file a parser opened is listed in the
-  coverage table. A file that exists but has a format or schema Tether does
+  coverage table. A file that exists but has a format or schema Connected Phone Forensics does
   not recognise is reported as `unrecognised`, not dropped.
 * **Every fact has provenance.** Each record carries the source file, its
   hash and a locator precise enough to re-find it by hand
@@ -103,7 +103,7 @@ datasets are the most valuable help the project can get.
 ## Desktop app
 
 ```
-pip install "tether-dfir[gui]"
+pip install "connected-phone-forensics[gui]"
 cpf-gui
 ```
 
@@ -127,7 +127,7 @@ Ctrl+6 switch pages.
 ## Try it without evidence
 
 ```
-tether demo ./demo
+cpf demo ./demo
 ```
 
 builds a synthetic case (a Windows laptop, a MacBook and a Linux desktop
@@ -146,17 +146,17 @@ phone. When an examiner has verified that two identifiers belong to one
 phone, the conclusion can be recorded:
 
 ```
-tether scan /mnt/evidence -o out --assume-same udid=00008120001A2B3C4D5E801E,bt_mac=a4:c3:37:5e:10:2b
+cpf scan /mnt/evidence -o out --assume-same udid=00008120001A2B3C4D5E801E,bt_mac=a4:c3:37:5e:10:2b
 ```
 
 The merge is labelled as an examiner assertion in the report and manifest.
 
-## Collecting only what Tether needs
+## Collecting only what Connected Phone Forensics needs
 
 ```
-tether targets --format kape > Tether.tkape
-tether targets --format velociraptor > Tether.yaml
-tether targets --format list
+cpf targets --format kape > CPF.tkape
+cpf targets --format velociraptor > CPF.yaml
+cpf targets --format list
 ```
 
 The targets are generated from the parsers' own path declarations, so a
@@ -165,7 +165,7 @@ collection always matches what the installed version can parse.
 ## Validating before you rely on it
 
 ```
-tether validate truth.json case_out/
+cpf validate truth.json case_out/
 ```
 
 scores a scan against a ground-truth file describing what was actually done
