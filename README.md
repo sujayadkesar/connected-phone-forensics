@@ -36,13 +36,24 @@ inside it.
 | Parser | Computer | Evidence of | Validation |
 |---|---|---|---|
 | `win_usb_phones` | Windows | Phones over USB (MTP/PTP/ADB/RNDIS, iPhone), install/arrival/removal times, serial/UDID, model | public sample |
-| `win_setupapi_phones` | Windows | First driver install per phone (setupapi.dev.log) | synthetic |
-| `win_bluetooth` | Windows | Bluetooth pairings (BTHPORT): name, class of device, last seen/connected, link keys | synthetic |
+| `win_setupapi_phones` | Windows | First driver install per phone, later driver installs (setupapi.dev.log) | synthetic |
+| `win_bluetooth` | Windows | Bluetooth pairings (BTHPORT): name, class of device, last seen/connected, link keys; phone services offered to the PC (Hands-Free, MAP, PBAP, Apple Notification Center) | synthetic |
 | `win_phone_hotspots` | Windows | Phone hotspots joined (NetworkList + DHCP; iPhone 172.20.10.0/28) | public sample |
+| `win_phonelink` | Windows | Microsoft Phone Link caches: SMS/MMS, calls, contacts, notifications, photos, app list, the phone's own number; deleted and edited rows recovered from the WAL | synthetic |
+| `win_wpn_phonelink` | Windows | Phone Link toasts in the Windows notification database, including recovered expired toasts | public sample |
+| `win_crossdevice` | Windows | Phones known to the Microsoft account (TaskFlow DeviceCache), cross-device settings | synthetic |
 | `win_apple_pairing` / `mac_apple_pairing` | Windows / macOS | iPhone trust (lockdown) records: UDID, Wi-Fi MAC, escrow keybag, pairing time | synthetic |
 | `win_apple_backups` / `mac_apple_backups` | Windows / macOS | iPhone backups: identity, phone number, IMEI, apps, dates, encryption | synthetic |
+| `mac_biome_sync` | macOS | iPhones syncing with the Mac through Biome: OS build, last sync, data streams received | synthetic |
+| `mac_messages` | macOS | SMS relayed from the iPhone (Text Message Forwarding) and iMessage; the iPhone's number | synthetic |
+| `mac_callhistory` | macOS | Calls synced from the iPhone, with the originating device name | synthetic |
+| `mac_airdrop` | macOS | Files received by AirDrop, with the sender's name | synthetic |
+| `mac_phone_hotspots` | macOS | Phone hotspots joined (known networks, Personal Hotspot flag, DHCP leases) | synthetic |
+| `mac_notifications` | macOS | Notifications forwarded from the iPhone (inferred: the app is not installed on the Mac) | synthetic |
+| `mac_knowledgec_peers` | macOS | knowledgeC sync peers (older macOS) | synthetic |
+| `mac_iphone_mirroring` | macOS | iPhone Mirroring pairing, the iPhone's app inventory | synthetic |
 | `linux_bluetooth` | Linux | BlueZ pairings and discovered devices | synthetic |
-| `*_kdeconnect` | Linux / Windows / macOS | KDE Connect paired phones, with identity-creation date | synthetic |
+| `*_kdeconnect` | Linux / Windows / macOS | KDE Connect paired phones; when the app on the phone created its identity, and whether that was the Android or the iOS app | synthetic |
 
 Run `tether plugins` for the current list and `tether docs` for a full
 artifact reference generated from the parsers themselves.
@@ -86,6 +97,32 @@ datasets are the most valuable help the project can get.
 | `devices.json` | The device graph, with merge reasons and possible matches |
 | `coverage.csv` | Every evidence file touched and its parse status |
 | `manifest.json` | Run metadata, evidence hashes, warnings |
+
+## Try it without evidence
+
+```
+tether demo ./demo
+```
+
+builds a synthetic case (a Windows laptop, a MacBook and a Linux desktop
+that one iPhone and one Pixel touched) and scans it. Every byte is
+synthetic; it shows what a report looks like and how records about the
+same phone are linked across computers.
+
+## Possible matches and examiner conclusions
+
+Weak clues (the same device name, a phone number, MAC addresses that differ
+by one, a hotspot BSSID derived from the phone's address) never merge
+records automatically. The report lists them per pair of devices, with the
+number of independent signals, and groups devices that are probably one
+phone. When an examiner has verified that two identifiers belong to one
+phone, the conclusion can be recorded:
+
+```
+tether scan /mnt/evidence -o out --assume-same udid=00008120001A2B3C4D5E801E,bt_mac=a4:c3:37:5e:10:2b
+```
+
+The merge is labelled as an examiner assertion in the report and manifest.
 
 ## Collecting only what Tether needs
 
