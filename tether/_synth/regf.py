@@ -136,3 +136,66 @@ class HiveBuilder:
             checksum ^= struct.unpack_from("<I", base, i)[0]
         struct.pack_into("<I", base, 508, checksum)
         return bytes(base) + hbin
+
+
+# -- transaction logs -----------------------------------------------------------
+
+
+def _checksum(block: bytes) -> int:
+    from ..readers.regf_log import base_block_checksum
+
+    return base_block_checksum(block)
+
+
+def set_sequence(hive: bytes, primary: int, secondary: int) -> bytes:
+    """``hive`` with new base-block sequence numbers; primary != secondary makes it dirty."""
+    out = bytearray(hive)
+    struct.pack_into("<II", out, 4, primary, secondary)
+    struct.pack_into("<I", out, 508, _checksum(out))
+    return bytes(out)
+
+
+def hvle_entry(seq: int, hbins_size: int, pages: list[tuple[int, bytes]], flags: int = 0) -> bytes:
+    """One new-format log entry; ``pages`` are (offset into hive bins data, data)."""
+    from ..readers.regf_log import marvin32
+
+    body = b"".join(struct.pack("<II", off, len(data)) for off, data in pages)
+    body += b"".join(data for _off, data in pages)
+    size = -(-(40 + len(body)) // 512) * 512
+    body = body.ljust(size - 40, b"\x00")
+    head = struct.pack("<4sIIIII", b"HvLE", size, flags, seq, hbins_size, len(pages))
+    hash1 = marvin32(body)
+    hash2 = marvin32(head + struct.pack("<Q", hash1))
+    return head + struct.pack("<QQ", hash1, hash2) + body
+
+
+def hive_bins_entry(seq: int, hive: bytes) -> bytes:
+    """A log entry rewriting all of ``hive``'s hive bins (the simplest valid dirty-page set)."""
+    return hvle_entry(seq, len(hive) - 4096, [(0, hive[4096:])])
+
+
+def new_format_log(hive: bytes, first_seq: int, entries: list[bytes]) -> bytes:
+    """A Windows 8.1+ ``.LOG1``/``.LOG2``: base block copy (file type 6), then entries."""
+    base = bytearray(hive[:512])
+    struct.pack_into("<II", base, 4, first_seq, first_seq)
+    struct.pack_into("<I", base, 28, 6)
+    struct.pack_into("<I", base, 508, _checksum(base))
+    return bytes(base) + b"".join(entries)
+
+
+def old_format_log(hive_after: bytes, seq: int, dirty_pages: list[int], timestamp: int | None = None) -> bytes:
+    """A Windows XP-8 ``.LOG``: base block copy, DIRT vector, then the listed 512-byte pages of ``hive_after``."""
+    base = bytearray(hive_after[:512])
+    struct.pack_into("<II", base, 4, seq, seq)
+    struct.pack_into("<I", base, 28, 1)
+    if timestamp is not None:
+        struct.pack_into("<Q", base, 12, timestamp)
+    struct.pack_into("<I", base, 508, _checksum(base))
+    hbins_size = struct.unpack_from("<I", hive_after, 40)[0]
+    vector = bytearray(hbins_size // 4096)
+    for page in dirty_pages:
+        vector[page // 8] |= 1 << (page % 8)
+    dirt = b"DIRT" + bytes(vector)
+    dirt = dirt.ljust(-(-len(dirt) // 512) * 512, b"\x00")
+    pages = b"".join(hive_after[4096 + 512 * p:4096 + 512 * (p + 1)] for p in sorted(dirty_pages))
+    return bytes(base) + dirt + pages

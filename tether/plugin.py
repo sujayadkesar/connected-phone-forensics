@@ -153,7 +153,18 @@ class Context:
             if side.name.lower().startswith(Path(path).name.lower() + ".log") and side.is_file():
                 self.fs.sha256(side)
         with open_hive(path, self.workdir) as h:
+            self._report_replay(path, h)
             yield h
+
+    def _report_replay(self, path: Path, hive: Hive) -> None:
+        """Record what was done with a hive's transaction logs: coverage per log, warnings."""
+        if hive.replay is None:
+            return
+        for log_path, log in zip(hive.logs, hive.replay.logs, strict=False):
+            status = PARSED if log.applied else EMPTY
+            self.cover(log_path, status, log.applied, log.note)
+        for message in hive.replay.warnings:
+            self.warn(message, path)
 
     def plist(self, path: Path) -> Any:
         self.fs.sha256(path)
@@ -233,7 +244,8 @@ class Context:
             self.warn(f"failed to parse: {type(exc).__name__}: {exc}\n"
                       f"{traceback.format_exc(limit=3)}", path)
             return
-        if len(self.coverage) == before_cov:
+        rel = self.fs.rel(path)
+        if not any(c.source_path == rel for c in self.coverage[before_cov:]):
             produced = counter[0] or (len(self.observations) - before_obs)
             self.cover(path, PARSED if produced else EMPTY, produced)
 

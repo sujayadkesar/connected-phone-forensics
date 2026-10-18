@@ -9,7 +9,7 @@ results are as valuable as code**.
 1. **Never touch evidence directly.** Open files only through the plugin
    `Context`: `ctx.sqlite()`, `ctx.hive()`, `ctx.plist()`, `ctx.read_bytes()`.
    These hash every file read, copy SQLite databases (with `-wal`/`-shm`)
-   before opening them, and apply registry transaction logs to a copy.
+   before opening them, and recover dirty registry hives from their transaction logs on a copy.
 2. **Never fail silently.** Wrap per-file work in `with ctx.file_scope(path)`.
    If a file exists but its format or schema is not one you recognise, call
    `ctx.cover(path, UNRECOGNISED, note=...)` and move on. The examiner must

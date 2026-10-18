@@ -70,7 +70,9 @@ datasets are the most valuable help the project can get.
 * **Read-only.** SQLite databases are copied together with their `-wal`
   and `-shm` files and the copy is opened, so the original is never modified
   and committed WAL records are not lost. Dirty registry hives are recovered
-  from their transaction logs on a copy.
+  from their transaction logs on a copy. Only log entries that continue the
+  hive's sequence numbers and pass their hash checks are applied; logs next to
+  a clean hive are left alone, and coverage says what was done with each log.
 * **Hashed.** Every evidence file read is SHA-256 hashed; hashes, tool
   version and command line go into `manifest.json`.
 * **Nothing skipped silently.** Every file a parser opened is listed in the

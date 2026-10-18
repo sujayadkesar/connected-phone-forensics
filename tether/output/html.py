@@ -295,8 +295,9 @@ def write_html(result: ScanResult, path: Path) -> Path:
 {"<h2>Warnings</h2><ul>" + warnings + "</ul>" if warnings else ""}
 <h2 id="method">Method</h2>
 <p class="note">Evidence is read-only. SQLite databases are copied together with their -wal/-shm files and the copy is
-opened, so the original is never modified and committed WAL records are included. Registry hives with transaction logs
-are recovered on a copy. Every evidence file read is SHA-256 hashed (see manifest.json).</p>
+opened, so the original is never modified and committed WAL records are included. Dirty registry hives are recovered
+on a copy from those transaction-log entries that continue the hive's sequence; logs next to a clean hive are not applied
+(see coverage). Every evidence file read is SHA-256 hashed (see manifest.json).</p>
 <p class="note">Times marked <b>file time</b> come from filesystem metadata rather than from inside the artifact; they
 depend on how the evidence was acquired and are not used for a phone's first/last seen.</p>
 <p class="note">Records are merged into one phone only through strong identifiers (UDID, serial, IMEI, Bluetooth/Wi-Fi MAC,

@@ -1,9 +1,10 @@
 """Windows registry hive access via regipy, with transaction-log recovery.
 
 Hives copied from a live or crashed system are often "dirty": recent writes
-sit in the ``.LOG1``/``.LOG2`` transaction logs. When logs are present the
-hive is copied to a work directory and the logs are applied to the copy,
-so the evidence is never modified and recent keys are not missed.
+sit in the ``.LOG1``/``.LOG2`` transaction logs. Logs are also left behind on
+clean hives, full of entries that were flushed long ago, so
+:mod:`tether.readers.regf_log` decides what to apply. Recovery happens on a
+copy in a work directory; the evidence is never modified.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import timeutil
+from .regf_log import APPLIED, NOT_APPLIED, LogResult, Replay, replay
 
 
 @dataclass
@@ -48,10 +50,17 @@ class RegKey:
 
 
 class Hive:
-    def __init__(self, registry_hive: Any, source: Path, recovered: bool):
+    def __init__(self, registry_hive: Any, source: Path, replay: Replay | None = None,
+                 logs: list[Path] | None = None):
         self._h = registry_hive
         self.source = source
-        self.recovered = recovered  # transaction logs were applied
+        self.replay = replay      # what was done with the transaction logs; None when there are none
+        self.logs = logs or []    # the transaction-log files next to the hive, in replay.logs order
+
+    @property
+    def recovered(self) -> bool:
+        """Transaction-log entries were applied to the copy being read."""
+        return self.replay is not None and self.replay.status == APPLIED
 
     def key(self, path: str) -> RegKey | None:
         try:
@@ -111,39 +120,41 @@ def control_set_paths(system: Hive) -> list[str]:
     return sets
 
 
+def transaction_logs(path: Path) -> list[Path]:
+    """Non-empty ``.LOG``/``.LOG1``/``.LOG2`` files of a hive; names are matched case-insensitively."""
+    path = Path(path)
+    wanted = {f"{path.name.lower()}{s}" for s in (".log", ".log1", ".log2")}
+    try:
+        found = [p for p in path.parent.iterdir() if p.name.lower() in wanted and p.is_file()]
+    except OSError:
+        return []
+    return sorted((p for p in found if p.stat().st_size > 0), key=lambda p: p.name.lower())
+
+
 @contextmanager
 def open_hive(path: Path, workdir: Path | None = None) -> Iterator[Hive]:
     from regipy.registry import RegistryHive
 
     path = Path(path)
-    logs = [path.with_name(path.name + s) for s in (".LOG1", ".LOG2", ".LOG")]
-    if not any(p.is_file() for p in logs):  # transaction logs are often lower-case on disk
-        logs = [p for p in path.parent.iterdir()
-                if p.name.lower() in {f"{path.name.lower()}{s}" for s in (".log1", ".log2", ".log")}]
-    logs = [p for p in logs if p.is_file() and p.stat().st_size > 0]
+    logs = transaction_logs(path)
     if not logs:
-        yield Hive(RegistryHive(str(path)), path, recovered=False)
+        yield Hive(RegistryHive(str(path)), path)
+        return
+    try:
+        result = replay(path.read_bytes(), [(p.name, p.read_bytes()) for p in logs])
+    except Exception as exc:  # noqa: BLE001 - a damaged log must not hide the hive itself
+        result = Replay(NOT_APPLIED, summary=f"transaction-log replay failed: {type(exc).__name__}",
+                        logs=[LogResult(p.name, note="not applied: replay failed") for p in logs],
+                        warnings=[f"transaction-log replay failed ({type(exc).__name__}: {exc}); "
+                                  "the hive was read without its logs"])
+    if result.data is None:
+        yield Hive(RegistryHive(str(path)), path, result, logs)
         return
     tmp = Path(tempfile.mkdtemp(prefix="tether-hive-", dir=workdir))
     try:
-        hive_copy = tmp / path.name
-        shutil.copyfile(path, hive_copy)
-        recovered = False
-        target = hive_copy
-        try:
-            from regipy.recovery import apply_transaction_logs
-
-            log1 = next((str(p) for p in logs if p.name.upper().endswith(".LOG1")), None)
-            log2 = next((str(p) for p in logs if p.name.upper().endswith(".LOG2")), None)
-            out = tmp / (path.name + ".recovered")
-            restored, _count = apply_transaction_logs(
-                str(hive_copy), primary_log_path=log1 or str(logs[0]),
-                secondary_log_path=log2, restored_hive_path=str(out),
-            )
-            target = Path(restored)
-            recovered = True
-        except Exception:  # noqa: BLE001 - fall back to the hive as-is
-            target = hive_copy
-        yield Hive(RegistryHive(str(target)), path, recovered=recovered)
+        recovered = tmp / (path.name + ".recovered")
+        recovered.write_bytes(result.data)
+        result.data = None  # the copy on disk is what gets read; free the memory
+        yield Hive(RegistryHive(str(recovered)), path, result, logs)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
