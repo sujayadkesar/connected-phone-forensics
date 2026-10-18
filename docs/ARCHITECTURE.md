@@ -30,7 +30,7 @@ the computer name recorded in the evidence (Windows `ComputerName`, macOS
 | Reader | Guarantee |
 |---|---|
 | `sqlite.open_db` | Copies the database with `-wal`, `-shm`, `-journal` to a temp dir; replays the WAL into the copy; opens the copy read-only. The original is never opened by SQLite. |
-| `sqlite_wal.recover_table_versions` | Pure-Python reader of the WAL and b-tree (no SQLite involved): returns every version of every row of a table found in the main file and in WAL frames, with checksum-validated frame attribution. Used to report deleted and superseded rows. |
+| `sqlite_wal.recover_table_versions` | Pure-Python reader of the WAL and b-tree (no SQLite involved): returns every version of every row of a table found in the main file and in checksum-validated WAL frames. Rows are attributed per database state (the main file, the end of each committed WAL transaction): the table's b-tree is walked from its root in that state, so a page another table reused is never read as this table's. Uncommitted frames are counted, not searched, and states a checkpoint overwrote in part are reported as incomplete. Used to report deleted and superseded rows. |
 | `registry.open_hive` | regipy on the hive, or on a copy recovered from its transaction logs; values are never truncated. `regf_log.replay` decides what to apply, following the REGF specification: only dirty hives, only hash-verified entries that continue the hive's sequence, LOG1/LOG2 in sequence order, old-format logs only with a matching timestamp. The result is reported as coverage per log and as warnings. |
 | `plist` | Binary/XML plists and NSKeyedArchiver archives. |
 | `x509` | Validity dates and names from PEM/DER certificates, standard library only. |
