@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
     except ImportError:
-        print("The desktop app needs PySide6: pip install \"connected-phone-forensics[gui]\"", file=sys.stderr)
+        print("The desktop app needs PySide6: pip install --upgrade connected-phone-forensics", file=sys.stderr)
         return 2
 
     if sys.platform == "win32":  # group the taskbar entry under our own icon, not python.exe's

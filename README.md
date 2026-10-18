@@ -11,7 +11,8 @@ from Windows, macOS and Linux disk images and triage collections.
 
 [![Release](https://img.shields.io/github/v/release/sujayadkesar/connected-phone-forensics?include_prereleases&sort=semver&label=release&color=2f6bed)](https://github.com/sujayadkesar/connected-phone-forensics/releases)
 [![CI](https://github.com/sujayadkesar/connected-phone-forensics/actions/workflows/ci.yml/badge.svg)](https://github.com/sujayadkesar/connected-phone-forensics/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](#install-with-python-any-os)
+[![PyPI](https://img.shields.io/pypi/v/connected-phone-forensics?color=2f6bed&label=pypi)](https://pypi.org/project/connected-phone-forensics/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](#install-with-pip-windows-macos-linux)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555)](#quick-start)
 [![License: MIT](https://img.shields.io/badge/license-MIT-1a8f3c)](LICENSE)
 
@@ -106,18 +107,14 @@ Connected Phone Forensics finds that trail and answers three questions:
 
 The same release has **`cpf-<version>-windows-x64.exe`**, the command-line tool.
 
-### Install with Python (any OS)
-
-Python 3.10 or newer on Windows, macOS or Linux:
+### Install with pip (Windows, macOS, Linux)
 
 ```bash
-pip install "connected-phone-forensics[gui] @ git+https://github.com/sujayadkesar/connected-phone-forensics"
-cpf-gui                      # desktop app
-cpf --help                   # command line
+pip install connected-phone-forensics
 ```
 
-Leave out `[gui]` for the command line only. The wheel attached to each release installs the same
-way: `pip install "connected_phone_forensics-<version>-py3-none-any.whl[gui]"`.
+Then run `cpf-gui` for the desktop app or `cpf --help` for the command line. Needs Python 3.10 or
+newer.
 
 ### Try it without evidence
 
@@ -271,7 +268,7 @@ good practice with any forensic tool.
 
 - Fix the open review findings, starting with SQLite deleted-row attribution
 - Ground-truth validation with real iPhone and Android devices
-- PyPI package and code-signed Windows builds
+- Code-signed Windows builds
 - Recording examiner conclusions (same phone / not the same phone) from the desktop app
 
 ## Building from source
@@ -280,12 +277,12 @@ good practice with any forensic tool.
 git clone https://github.com/sujayadkesar/connected-phone-forensics
 cd connected-phone-forensics
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install -e ".[dev,gui]"
+pip install -e ".[dev]"
 python -m pytest                                  # GUI tests run headless
 python -m ruff check connected_phone_forensics tests
 ```
 
-Windows executables: `pip install -e ".[gui,build]"`, then `python packaging/build.py` and
+Windows executables: `pip install -e ".[build]"`, then `python packaging/build.py` and
 `python packaging/smoke_test.py dist`. Releases are built the same way by
 [GitHub Actions](.github/workflows/release.yml) when a version tag is pushed.
 

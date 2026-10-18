@@ -105,7 +105,7 @@ running parsers finish; nothing is written).
 
 ## Desktop app (`connected_phone_forensics/gui/`)
 
-PySide6, optional (`pip install -e ".[gui]"`, entry point `cpf-gui`).
+PySide6, installed with the package (entry point `cpf-gui`). The command line never imports Qt.
 
 * `jobs.py`: scans, case loading and evidence previews run on Qt's thread
   pool; results come back as signals on the UI thread.

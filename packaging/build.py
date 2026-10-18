@@ -1,6 +1,6 @@
 """Build the Windows executables with PyInstaller.
 
-    pip install -e ".[gui,build]"
+    pip install -e ".[build]"
     python packaging/build.py            # -> dist/ConnectedPhoneForensics-<v>-windows-x64.exe, cpf-<v>-windows-x64.exe
     python packaging/smoke_test.py dist  # run both and check they work
 

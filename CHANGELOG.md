@@ -18,6 +18,8 @@ First public release.
   reopening earlier results.
 - **Windows executables**: the desktop app and the `cpf` command line as single-file downloads,
   with SHA-256 checksums.
+- `pip install connected-phone-forensics` installs both the desktop app (`cpf-gui`) and the
+  command line (`cpf`) on Windows, macOS and Linux.
 - **23 parsers** across Windows, macOS and Linux: USB, setupapi, Bluetooth, phone hotspots,
   Phone Link, Windows notifications, Microsoft-account phones, iPhone pairing and backups, Biome,
   Messages, call history, AirDrop, Notification Center, knowledgeC, iPhone Mirroring, BlueZ and

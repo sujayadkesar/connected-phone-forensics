@@ -1,6 +1,6 @@
 """Regenerate the README screenshots from the real app and the synthetic demo case.
 
-    pip install -e ".[gui]"
+    pip install -e .
     python scripts/take_screenshots.py
 
 Writes docs/images/screenshots/*.png. The demo case is scanned for real; only the

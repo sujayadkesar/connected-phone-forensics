@@ -34,7 +34,7 @@ def main() -> int:
 |---|---|
 | `ConnectedPhoneForensics-{version}-windows-x64.exe` | **Desktop app** for Windows 10/11. Download and run; nothing to install. |
 | `cpf-{version}-windows-x64.exe` | Command-line tool for Windows (`cpf scan`, `cpf demo`, ...). |
-| `connected_phone_forensics-{version}-py3-none-any.whl` | Python package for Windows, macOS and Linux: `pip install connected_phone_forensics-{version}-py3-none-any.whl` (add `[gui]` for the desktop app). |
+| `connected_phone_forensics-{version}-py3-none-any.whl` | Python package (the same as `pip install connected-phone-forensics`) for Windows, macOS and Linux. |
 | `connected_phone_forensics-{version}.tar.gz` | Source archive. |
 
 The Windows executables are not code-signed yet, so SmartScreen may show *Windows protected your PC*:
