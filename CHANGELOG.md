@@ -6,6 +6,24 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-18
+
+### Added
+
+Found by scanning a live Windows 11 system with an Android phone linked in Phone Link:
+
+- Phone Link RCS messages (`rcs_chat`) and RCS file transfers (`rcs_filetransfer`) in `phone.db`
+  are reported like SMS: received/sent events, sender and thread recipients (`rcs_conversation`,
+  with the SMS/MMS thread it falls back to), the phone's own number from the SIM subscription,
+  attachments exported, and deleted or edited rows recovered from the WAL. Before, these tables
+  were only listed in a warning.
+- The Phone Link phone is labelled with the name, manufacturer, model and OS (for example
+  "Android 15") that Phone Link records in `LocalCache\DeviceMetadataStorage.json`, with the
+  registration and last-seen times. Before, it was labelled only by its profile id, such as
+  "Phone (Phone Link 3fdf7366)". The computer's own entry in that file is reported but never
+  becomes a phone.
+- The phone's wallpaper in `deviceData.db` is reported and exported.
+
 ### Fixed
 
 - Recovery of deleted SQLite rows (Phone Link, Windows notifications) no longer reports rows of
@@ -23,6 +41,25 @@ All notable changes are listed here. The format follows
   replaced are never used for older states, including after a checkpoint interrupted part-way.
 - A recovered record with more fields than the table has columns is reported in a warning instead
   of being cut to fit the columns.
+
+### Changed
+
+- `continuity.db` (phone browser history, app hand-off contexts) and `sharedContent.db` (links and
+  content shared from the phone) stay unrecognised because their value formats are not publicly
+  documented, but the coverage note now says what they hold and how many rows each table has.
+
+### Known issues
+
+Still open from the October 2026 code review:
+
+- USB serials that vendors reuse across devices (for example `0123456789ABCDEF`) are treated as
+  unique, so two different phones can merge into one device.
+- USB modems, MiFi devices and RNDIS gadgets can be counted as Android phones.
+- A `#` or `?` in the temporary folder path makes a database open as empty.
+- Velociraptor's escaped folder names are not decoded, so files in such collections are missed.
+- Mail and Messages attachments can be reported as AirDrop receipts.
+- A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
+- About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
 ## [0.1.1] - 2026-10-18
 
@@ -85,15 +122,21 @@ First public release.
 
 Found by a code review in October 2026 and not fixed in this release:
 
+- **Critical**: recovery of deleted SQLite rows (Phone Link, Windows notifications) can report
+  rows of another table that reused a page as recovered messages or notifications (fixed in 0.1.2).
 - USB serials that vendors reuse across devices (for example `0123456789ABCDEF`) are treated as
   unique, so two different phones can merge into one device.
 - USB modems, MiFi devices and RNDIS gadgets can be counted as Android phones.
+- Folders that cannot be read (permissions) are treated as empty, without a warning (fixed in
+  0.1.1).
 - A `#` or `?` in the temporary folder path makes a database open as empty.
 - Velociraptor's escaped folder names are not decoded, so files in such collections are missed.
+- Some deleted SQLite rows are not recovered (fixed in 0.1.2).
 - Mail and Messages attachments can be reported as AirDrop receipts.
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.2
 [0.1.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.1
 [0.1.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.0

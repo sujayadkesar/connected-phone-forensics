@@ -165,7 +165,7 @@ cpf scan /mnt/evidence -o case42 --case 42 --examiner "A. Examiner"
 | `win_setupapi_phones` | Windows | First driver install per phone, later driver installs (setupapi.dev.log) | synthetic |
 | `win_bluetooth` | Windows | Bluetooth pairings (BTHPORT): name, class of device, last seen/connected, link keys; phone services offered to the PC (Hands-Free, MAP, PBAP, Apple Notification Center) | synthetic |
 | `win_phone_hotspots` | Windows | Phone hotspots joined (NetworkList + DHCP; iPhone 172.20.10.0/28) | public sample |
-| `win_phonelink` | Windows | Microsoft Phone Link caches: SMS/MMS, calls, contacts, notifications, photos, app list, the phone's own number; deleted and edited rows recovered from the WAL | synthetic |
+| `win_phonelink` | Windows | Microsoft Phone Link caches: SMS/MMS/RCS messages and RCS file transfers, calls, contacts, notifications, photos, wallpaper, app list, the phone's own number; the phone's name, model and OS from DeviceMetadataStorage.json; deleted and edited rows recovered from the WAL | synthetic |
 | `win_wpn_phonelink` | Windows | Phone Link toasts in the Windows notification database, including recovered expired toasts | public sample |
 | `win_crossdevice` | Windows | Phones known to the Microsoft account (TaskFlow DeviceCache), cross-device settings | synthetic |
 | `win_apple_pairing` / `mac_apple_pairing` | Windows / macOS | iPhone trust (lockdown) records: UDID, Wi-Fi MAC, escrow keybag, pairing time | synthetic |
@@ -259,8 +259,8 @@ what the installed version can parse.
 automated tests, but only three parsers have been checked against real public data and none yet
 against ground-truth data from real phones. A code review in October 2026 found issues that are not
 all fixed yet. Its one critical finding, recovery of *deleted* SQLite rows (Phone Link, Windows
-notifications) reporting rows from another table as recovered messages or notifications, is fixed
-after 0.1.1: a row is now attributed to a table only when its page belonged to that table in the
+notifications) reporting rows from another table as recovered messages or notifications, was fixed
+in 0.1.2: a row is now attributed to a table only when its page belonged to that table in the
 database state it was read from. The open issues are listed in the
 [changelog](CHANGELOG.md#known-issues).
 
