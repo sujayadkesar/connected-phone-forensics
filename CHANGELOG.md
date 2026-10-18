@@ -6,6 +6,24 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Recovery of deleted SQLite rows (Phone Link, Windows notifications) no longer reports rows of
+  another table as recovered messages or notifications. A row is now attributed to a table only
+  when its page belonged to that table's b-tree in the database state it was read from: the main
+  file, or the end of one committed WAL transaction. Before, any old image of a page the table uses
+  now was decoded as the table's rows, so a page that held conversation rows and was later reused
+  for messages produced fabricated "recovered" SMS.
+- Deleted rows on pages that are no longer part of the table (freed after a bulk delete, or a root
+  page that has since split) are recovered; before, they were silently missed.
+- Rows from a WAL transaction that never committed are no longer reported as recovered records; a
+  warning says how many frames were not searched.
+- When recovery could only read part of an earlier database state (for example because a
+  checkpoint overwrote the pages it needs), a warning says so. Page images that a checkpoint
+  replaced are never used for older states, including after a checkpoint interrupted part-way.
+- A recovered record with more fields than the table has columns is reported in a warning instead
+  of being cut to fit the columns.
+
 ## [0.1.1] - 2026-10-18
 
 Found by scanning a live Windows 11 system.
@@ -67,14 +85,11 @@ First public release.
 
 Found by a code review in October 2026 and not fixed in this release:
 
-- **Critical**: recovery of deleted SQLite rows (Phone Link, Windows notifications) can report
-  rows of another table that reused a page as recovered messages or notifications.
 - USB serials that vendors reuse across devices (for example `0123456789ABCDEF`) are treated as
   unique, so two different phones can merge into one device.
 - USB modems, MiFi devices and RNDIS gadgets can be counted as Android phones.
 - A `#` or `?` in the temporary folder path makes a database open as empty.
 - Velociraptor's escaped folder names are not decoded, so files in such collections are missed.
-- Some deleted SQLite rows are not recovered.
 - Mail and Messages attachments can be reported as AirDrop receipts.
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.

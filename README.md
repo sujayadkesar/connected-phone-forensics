@@ -258,16 +258,18 @@ what the installed version can parse.
 **Early release (0.1).** The tool runs end to end on Windows, macOS and Linux, and every parser has
 automated tests, but only three parsers have been checked against real public data and none yet
 against ground-truth data from real phones. A code review in October 2026 found issues that are not
-fixed yet, including one critical: recovery of *deleted* SQLite rows (Phone Link, Windows
-notifications) can report rows from another table as recovered messages or notifications. The full
-list is in the [changelog](CHANGELOG.md#known-issues).
+all fixed yet. Its one critical finding, recovery of *deleted* SQLite rows (Phone Link, Windows
+notifications) reporting rows from another table as recovered messages or notifications, is fixed
+after 0.1.1: a row is now attributed to a table only when its page belonged to that table in the
+database state it was read from. The open issues are listed in the
+[changelog](CHANGELOG.md#known-issues).
 
 Treat results as leads and verify them against the source records the report points to, which is
 good practice with any forensic tool.
 
 ### Roadmap
 
-- Fix the open review findings, starting with SQLite deleted-row attribution
+- Fix the open review findings
 - Ground-truth validation with real iPhone and Android devices
 - Code-signed Windows builds
 - Recording examiner conclusions (same phone / not the same phone) from the desktop app

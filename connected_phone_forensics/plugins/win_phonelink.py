@@ -53,8 +53,8 @@ _HANDLED = {"phone.db", "contacts.db", "calling.db", "notifications.db", "photos
             "settings.db", "phoneapps.db"}
 
 
-def _digits(number: str | None) -> str:
-    d = re.sub(r"\D", "", number or "")
+def _digits(number: Any) -> str:
+    d = re.sub(r"\D", "", str(number or ""))
     return d[-9:] if len(d) >= 9 else d
 
 
@@ -99,9 +99,11 @@ def recovered_rows(db: SafeDB, path: Path, table: str,
 
     Returns (status, row-as-dict, version) with status "deleted" (rowid no
     longer exists) or "superseded" (an earlier/other version of a live row).
-    When recovery cannot run on this file, ``warn`` is told why, so the
-    report never implies that a file was searched for deleted rows when it
-    was not.
+    Versions come only from pages that belonged to this table's b-tree in the
+    state they were read from (see readers.sqlite_wal). When recovery cannot
+    run on this file, or could only search part of it, ``warn`` is told why,
+    so the report never implies that a file was searched for deleted rows
+    when it was not.
     """
     cols = db.schema.columns(table)
     if not cols:
@@ -112,20 +114,33 @@ def recovered_rows(db: SafeDB, path: Path, table: str,
         current[r[0]] = tuple(r[1:])
     out = []
     rec = recover_table_versions(path, table)
+    say = warn or (lambda message, path: None)
     if rec.note:
-        if warn is not None:
-            warn(f"deleted/superseded-row recovery not performed for table {table}: {rec.note}", path)
+        say(f"deleted/superseded-row recovery not performed for table {table}: {rec.note}", path)
         return []
+    if rec.incomplete:
+        say(f"deleted/superseded-row recovery for table {table} is partial: {rec.incomplete} database "
+            "state(s) could only be read in part (pages overwritten by a checkpoint, missing or "
+            "inconsistent); rows held only there are not reported", path)
+    if rec.uncommitted_frames:
+        say(f"{rec.uncommitted_frames} WAL frame(s) of a transaction that never committed were not "
+            f"searched for rows of table {table}", path)
+    wide = 0
     for v in rec.versions:
+        if len(v.values) > len(cols):
+            wide += 1  # does not fit the table's columns; mapping it onto them would be a guess
+            continue
         vals = list(v.values) + [None] * (len(cols) - len(v.values))
-        vals = vals[: len(cols)]
         if alias is not None and vals[alias] is None:
             vals[alias] = v.rowid
         key = tuple(vals)
         if v.rowid in current and current[v.rowid] == key:
             continue
         status = "superseded" if v.rowid in current else "deleted"
-        out.append((status, dict(zip(cols, vals, strict=False)), v))
+        out.append((status, dict(zip(cols, vals, strict=True)), v))
+    if wide:
+        say(f"{wide} recovered record(s) of table {table} have more fields than the table has columns "
+            "and were not reported", path)
     return out
 
 

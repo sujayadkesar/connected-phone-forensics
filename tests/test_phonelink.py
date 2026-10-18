@@ -1,11 +1,15 @@
 """Phone Link parser on a synthetic profile built from documented schemas."""
 
+import shutil
+import sqlite3
 from datetime import datetime, timezone
 
 from connected_phone_forensics._synth.phonelink import build_phonelink_profile
 from connected_phone_forensics.engine import scan
 from connected_phone_forensics.model import IdKind
 from connected_phone_forensics.output import write_all
+from connected_phone_forensics.plugins.win_phonelink import recovered_rows
+from connected_phone_forensics.readers.sqlite import open_db
 
 UTC = timezone.utc
 BASE = datetime(2025, 6, 14, 18, 0, tzinfo=UTC)
@@ -72,3 +76,35 @@ def test_phonelink_report_renders(tmp_path):
     write_all(result, tmp_path / "out")
     html = (tmp_path / "out" / "report.html").read_text()
     assert "recovered: deleted" in html and "Jordan Lee" in html
+
+
+def test_rows_of_another_table_on_reused_pages_are_not_recovered_as_sms(tmp_path):
+    """Code review, October 2026: deleted conversation rows came back as 'recovered' SMS."""
+    live = tmp_path / "phone.db"
+    c = sqlite3.connect(live, isolation_level=None)
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA wal_autocheckpoint=0")
+    c.execute("CREATE TABLE message(message_id INTEGER, from_address TEXT, thread_id INTEGER, status INTEGER, "
+              "type INTEGER, subject TEXT, body TEXT, timestamp INTEGER, tagged_body TEXT, pc_status INTEGER)")
+    c.execute("CREATE TABLE conversation(thread_id INTEGER, recipient_list TEXT, timestamp INTEGER, "
+              "msg_count INTEGER, unread_count INTEGER)")
+    for i in range(1, 301):
+        c.execute("INSERT INTO conversation VALUES (?,?,?,?,0)", (i, f"+1555{i:07d}", 132_000_000_000_000_000 + i, i))
+    c.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    c.execute("DELETE FROM conversation")  # the sync drops the threads ...
+    for i in range(1, 251):                # ... and the messages that follow reuse their pages
+        c.execute("INSERT INTO message VALUES (?,'+15550101',1,2,1,NULL,?,?,NULL,0)",
+                  (i, f"message {i}", 133_000_000_000_000_000 + i))
+    ev = tmp_path / "ev"
+    ev.mkdir()
+    for name in ("phone.db", "phone.db-wal"):
+        shutil.copy(tmp_path / name, ev / name)
+    c.close()
+    warnings = []
+    with open_db(ev / "phone.db") as db:
+        messages = recovered_rows(db, ev / "phone.db", "message", lambda msg, path: warnings.append(msg))
+        threads = recovered_rows(db, ev / "phone.db", "conversation", lambda msg, path: warnings.append(msg))
+    assert messages == []  # every message is live; nothing was deleted or edited
+    assert {status for status, _row, _v in threads} == {"deleted"}
+    assert sorted(row["recipient_list"] for _s, row, _v in threads) == [f"+1555{i:07d}" for i in range(1, 301)]
+    assert warnings == []
