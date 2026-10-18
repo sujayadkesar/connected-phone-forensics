@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/logo.png" width="104" alt="Connected Phone Forensics logo">
+<img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/logo.png" width="104" alt="Connected Phone Forensics logo">
 
 # Connected Phone Forensics
 
@@ -12,19 +12,19 @@ from Windows, macOS and Linux disk images and triage collections.
 [![Release](https://img.shields.io/github/v/release/sujayadkesar/connected-phone-forensics?include_prereleases&sort=semver&label=release&color=2f6bed)](https://github.com/sujayadkesar/connected-phone-forensics/releases)
 [![CI](https://github.com/sujayadkesar/connected-phone-forensics/actions/workflows/ci.yml/badge.svg)](https://github.com/sujayadkesar/connected-phone-forensics/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/connected-phone-forensics?color=2f6bed&label=pypi)](https://pypi.org/project/connected-phone-forensics/)
-[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](#install-with-pip-windows-macos-linux)
-[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555)](#quick-start)
-[![License: MIT](https://img.shields.io/badge/license-MIT-1a8f3c)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://github.com/sujayadkesar/connected-phone-forensics#install-with-pip-windows-macos-linux)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555)](https://github.com/sujayadkesar/connected-phone-forensics#quick-start)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1a8f3c)](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/LICENSE)
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%20app-2f6bed?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sujayadkesar/connected-phone-forensics/releases/latest)
 &nbsp;
-[![Quick start](https://img.shields.io/badge/Quick%20start-1c222b?style=for-the-badge)](#quick-start)
+[![Quick start](https://img.shields.io/badge/Quick%20start-1c222b?style=for-the-badge)](https://github.com/sujayadkesar/connected-phone-forensics#quick-start)
 &nbsp;
-[![Documentation](https://img.shields.io/badge/Docs-1c222b?style=for-the-badge)](docs/ARCHITECTURE.md)
+[![Documentation](https://img.shields.io/badge/Docs-1c222b?style=for-the-badge)](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/docs/ARCHITECTURE.md)
 
 <br>
 
-<img src="docs/images/screenshots/overview.png" alt="Connected Phone Forensics: case overview with phones, computers and records by connection type" width="100%">
+<img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/overview.png" alt="Connected Phone Forensics: case overview with phones, computers and records by connection type" width="100%">
 
 </div>
 
@@ -63,24 +63,24 @@ Connected Phone Forensics finds that trail and answers three questions:
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/images/screenshots/new-scan.png" alt="New scan: evidence drop zone with the computers found, case details and parsers"></td>
-    <td width="50%"><img src="docs/images/screenshots/scan-progress.png" alt="Scan progress with steps, live counts and the activity log"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/new-scan.png" alt="New scan: evidence drop zone with the computers found, case details and parsers"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/scan-progress.png" alt="Scan progress with steps, live counts and the activity log"></td>
   </tr>
   <tr>
     <td align="center"><b>New scan</b>: drop the evidence; the computers inside are listed before you start</td>
     <td align="center"><b>Live progress</b>: parsers run in parallel and can be cancelled</td>
   </tr>
   <tr>
-    <td><img src="docs/images/screenshots/devices.png" alt="Device detail: identifiers, connections and why records were linked"></td>
-    <td><img src="docs/images/screenshots/timeline.png" alt="Timeline with filters and the provenance of the selected record"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/devices.png" alt="Device detail: identifiers, connections and why records were linked"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/timeline.png" alt="Timeline with filters and the provenance of the selected record"></td>
   </tr>
   <tr>
     <td align="center"><b>Devices</b>: identifiers, connections, why records were linked</td>
     <td align="center"><b>Timeline</b>: every record with its file, locator and SHA-256</td>
   </tr>
   <tr>
-    <td><img src="docs/images/screenshots/coverage.png" alt="Coverage: every evidence file read and its parse status"></td>
-    <td><img src="docs/images/screenshots/devices-light.png" alt="The Devices page in the light theme"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/coverage.png" alt="Coverage: every evidence file read and its parse status"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/devices-light.png" alt="The Devices page in the light theme"></td>
   </tr>
   <tr>
     <td align="center"><b>Coverage</b>: every file a parser read, and what came of it</td>
@@ -184,22 +184,14 @@ cpf scan /mnt/evidence -o case42 --case 42 --examiner "A. Examiner"
 **Validation levels are printed in every report.** `synthetic`: tested against fixtures built from
 public documentation. `public_sample`: also tested against real public data (the DFIR Artifact
 Museum). `ground_truth`: tested against data created on real devices with recorded actions. See
-[docs/VALIDATION.md](docs/VALIDATION.md); ground-truth datasets are the most valuable contribution
+[docs/VALIDATION.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/docs/VALIDATION.md); ground-truth datasets are the most valuable contribution
 the project can receive.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    A[Evidence folder<br>image or collection] --> B[Find each<br>Windows / macOS / Linux root]
-    B --> C[23 parsers<br>in parallel]
-    C --> D[Records with provenance<br>file, locator, SHA-256]
-    D --> E[Correlate<br>strong identifiers only]
-    E --> F[Device graph<br>+ possible matches]
-    F --> G[Report, timeline,<br>JSON, manifest]
-```
+<img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/how-it-works.png" alt="How it works: evidence folder, find each computer, 23 parsers in parallel, records with provenance, correlate on strong identifiers, device graph, outputs" width="100%">
 
-More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+More in [docs/ARCHITECTURE.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/docs/ARCHITECTURE.md).
 
 ## How evidence is treated
 
@@ -262,7 +254,7 @@ all fixed yet. Its one critical finding, recovery of *deleted* SQLite rows (Phon
 notifications) reporting rows from another table as recovered messages or notifications, was fixed
 in 0.1.2: a row is now attributed to a table only when its page belonged to that table in the
 database state it was read from. The open issues are listed in the
-[changelog](CHANGELOG.md#known-issues).
+[changelog](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/CHANGELOG.md#known-issues).
 
 Treat results as leads and verify them against the source records the report points to, which is
 good practice with any forensic tool.
@@ -287,21 +279,21 @@ python -m ruff check connected_phone_forensics tests
 
 Windows executables: `pip install -e ".[build]"`, then `python packaging/build.py` and
 `python packaging/smoke_test.py dist`. Releases are built the same way by
-[GitHub Actions](.github/workflows/release.yml) when a version tag is pushed.
+[GitHub Actions](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/.github/workflows/release.yml) when a version tag is pushed.
 
 ## Contributing
 
-Parsers are small, self-registering modules. [CONTRIBUTING.md](CONTRIBUTING.md) describes the
+Parsers are small, self-registering modules. [CONTRIBUTING.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/CONTRIBUTING.md) describes the
 plugin API and the evidence-handling rules every parser follows. Bug reports, artifact requests and
 ground-truth datasets are welcome in the [issue tracker](https://github.com/sujayadkesar/connected-phone-forensics/issues).
-Please report security problems privately, as described in [SECURITY.md](SECURITY.md).
+Please report security problems privately, as described in [SECURITY.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/SECURITY.md).
 
 ## Citing
 
 If you use Connected Phone Forensics in research or casework documentation, please cite it; GitHub
-shows a citation from [CITATION.cff](CITATION.cff) under *Cite this repository*.
+shows a citation from [CITATION.cff](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/CITATION.cff) under *Cite this repository*.
 
 ## License
 
-[MIT](LICENSE). Provided as is, without warranty: validate results before relying on them in
+[MIT](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/LICENSE). Provided as is, without warranty: validate results before relying on them in
 legal proceedings.
