@@ -1,0 +1,83 @@
+name: release
+
+# Push a tag like v0.1.0 to build and publish a release. Tags with a suffix
+# (v0.2.0-rc1, v0.2.0-beta) are published as pre-releases.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev,gui]"
+      - run: python -m ruff check connected_phone_forensics tests
+      - run: python -m pytest
+
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the tag matches the package version
+        shell: bash
+        run: |
+          v=$(python -c "import connected_phone_forensics as c; print(c.__version__)")
+          test "v$v" = "${GITHUB_REF_NAME%%-*}" || { echo "tag $GITHUB_REF_NAME does not match version $v"; exit 1; }
+      - run: python -m pip install -e ".[gui,build]"
+      - run: python packaging/build.py
+      - run: python packaging/smoke_test.py dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  python:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python
+          path: dist/*
+
+  publish:
+    needs: [windows, python]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Release notes
+        run: python scripts/release_notes.py "$GITHUB_REF_NAME" dist/SHA256SUMS.txt > notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags=""
+          case "$GITHUB_REF_NAME" in *-*) flags="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Connected Phone Forensics ${GITHUB_REF_NAME#v}" \
+            --notes-file notes.md $flags

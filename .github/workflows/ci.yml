@@ -5,6 +5,8 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    env:
+      QT_QPA_PLATFORM: offscreen
     strategy:
       fail-fast: false
       matrix:
@@ -16,6 +18,9 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -e ".[dev]"
+      - name: Desktop app dependencies (GUI tests run headless; skipped on Linux)
+        if: runner.os != 'Linux'
+        run: python -m pip install -e ".[gui]"
       - run: python -m ruff check connected_phone_forensics tests
       - run: python -m pytest
       - name: CLI smoke test

@@ -74,8 +74,7 @@ class Sidebar(QFrame):
         logo = QLabel()
         logo.setFixedSize(34, 34)
         self._logo = logo
-        THEME.on_change(lambda: logo.setPixmap(app_icon(THEME.palette.accent).pixmap(34, 34)))
-        logo.setPixmap(app_icon(THEME.palette.accent).pixmap(34, 34))
+        logo.setPixmap(app_icon().pixmap(34, 34))
         brand = hbox(logo, vbox(label("Connected Phone", "BrandName"), label("Forensics", "BrandSub"), spacing=0),
                      "stretch", spacing=10)
         lay = vbox(spacing=2, margins=(14, 18, 14, 14))
@@ -203,7 +202,7 @@ class MainWindow(QMainWindow):
         THEME.bind_icon(self.sidebar.theme_btn, "ph.sun" if p.dark else "ph.moon", "muted", 17)
         from .icons import app_icon
 
-        self.setWindowIcon(app_icon(p.accent))
+        self.setWindowIcon(app_icon())
         self.settings.setValue("theme", name)
 
     def toggle_theme(self) -> None:

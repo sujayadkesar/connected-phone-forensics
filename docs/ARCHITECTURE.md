@@ -123,3 +123,20 @@ PySide6, optional (`pip install -e ".[gui]"`, entry point `cpf-gui`).
   text label.
 * `pages/`: New scan, scan progress, Overview, Devices, Timeline, Coverage,
   Issues.
+
+## Packaging and releases (`packaging/`, `.github/workflows/release.yml`)
+
+* `packaging/build.py` builds two single-file Windows executables with
+  PyInstaller: the desktop app (no console) and the `cpf` command line.
+  Parsers are discovered at run time, so their package is collected
+  explicitly; Qt modules the app does not use are left out.
+* `packaging/smoke_test.py` runs the built executables: the CLI must list
+  every parser and scan the demo case; the desktop app runs the demo case
+  through its own window off screen (`--smoke-test`).
+* Pushing a tag `vX.Y.Z` runs the tests, builds and smoke-tests the
+  executables on Windows, builds the wheel and source archive, and publishes
+  a GitHub release with SHA-256 checksums and the CHANGELOG section as notes.
+  Tags with a suffix (`v0.2.0-rc1`) become pre-releases.
+* `scripts/make_brand_assets.py` renders the logo and `packaging/app.ico`
+  from the app's own drawing code; `scripts/take_screenshots.py` regenerates
+  the README screenshots from the demo case.
