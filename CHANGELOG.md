@@ -6,6 +6,28 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+Found by scanning a live Windows 11 system with an Android phone linked in Phone Link.
+
+### Added
+
+- Phone Link RCS messages (`rcs_chat`) and RCS file transfers (`rcs_filetransfer`) in `phone.db`
+  are reported like SMS: received/sent events, sender and thread recipients (`rcs_conversation`,
+  with the SMS/MMS thread it falls back to), the phone's own number from the SIM subscription,
+  attachments exported, and deleted or edited rows recovered from the WAL. Before, these tables
+  were only listed in a warning.
+- The Phone Link phone is labelled with the name, manufacturer, model and OS (for example
+  "Android 15") that Phone Link records in `LocalCache\DeviceMetadataStorage.json`, with the
+  registration and last-seen times. Before, it was labelled only by its profile id, such as
+  "Phone (Phone Link 3fdf7366)". The computer's own entry in that file is reported but never
+  becomes a phone.
+- The phone's wallpaper in `deviceData.db` is reported and exported.
+
+### Changed
+
+- `continuity.db` (phone browser history, app hand-off contexts) and `sharedContent.db` (links and
+  content shared from the phone) stay unrecognised because their value formats are not publicly
+  documented, but the coverage note now says what they hold and how many rows each table has.
+
 ## [0.1.1] - 2026-10-18
 
 Found by scanning a live Windows 11 system.

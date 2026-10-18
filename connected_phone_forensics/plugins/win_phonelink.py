@@ -5,24 +5,43 @@ per linked phone under
 ``%LOCALAPPDATA%\\Packages\\Microsoft.YourPhone_8wekyb3d8bbwe\\LocalCache\\Indexed\\<device id>\\``
 with SQLite databases in ``System\\Database``:
 
-* ``phone.db`` — SMS (``message``), MMS (``mms``/``mms_part``), conversations,
-  and the SIM ``subscription`` table, which can hold the phone's own number;
-  contacts lived here before ~2020.
+* ``phone.db`` — SMS (``message``), MMS (``mms``/``mms_part``), RCS chat
+  messages (``rcs_chat``) and file transfers (``rcs_filetransfer``) with their
+  threads (``rcs_conversation``), conversations, and the SIM ``subscription``
+  table, which can hold the phone's own number; contacts lived here before ~2020.
 * ``contacts.db`` — the synced address book.
 * ``calling.db`` — ``call_history`` (Android CallLog types).
 * ``notifications.db`` — mirrored notifications as Android JSON.
 * ``photos.db`` — recent photos with thumbnail and full-size BLOBs.
 * ``settings.db`` / ``phoneapps.db`` — installed-app inventory.
+* ``deviceData.db`` — the phone's wallpaper image (``wallpaper``).
+
+``LocalCache\\DeviceMetadataStorage.json`` (one per Windows user) lists the
+devices registered with Phone Link: for the phone, its display name,
+manufacturer, model, OS and Phone Link app version, with registration and
+last-seen times. An entry whose ``Metadata.Id`` equals a profile folder name
+describes that profile's phone, so the name, model and OS label the phone.
+The file also lists the computer itself (``OsName`` "Windows"); Windows
+entries are reported but never attributed to a device.
 
 All times inside the databases are FILETIME (UTC), except notification JSON
-``postTime`` (Unix ms). Every record is attributed to the profile's phone.
+``postTime`` (Unix ms); the JSON file uses ISO 8601 with an offset. Every
+record is attributed to the profile's phone. RCS rows are read like SMS:
+``type`` 1/2 is received/sent and ``timestamp`` is FILETIME, as Phone Link's
+own message library reads all message tables (see phonelink-cli). Other RCS
+columns (``content_type``, ``message_type``, ``status``) are reported raw.
+An RCS row's ``thread_id`` is resolved through ``rcs_conversation`` only;
+``fallback_id`` there is the SMS/MMS thread of the same conversation.
 
 Rows deleted or changed since the last checkpoint (dismissed notifications,
 deleted messages, earlier versions of edited rows) are recovered from the
 ``-wal`` file and the main database and reported as ``*_recovered`` events.
 Profiles persist after a phone is unlinked, so a profile proves the phone was
-linked at some time, not that it still is. Databases Connected Phone Forensics does not know
-(e.g. ``deviceData.db``) are listed as unrecognised with their tables.
+linked at some time, not that it still is. Databases Connected Phone Forensics does not parse
+(``continuity.db``: phone browser history and app hand-off contexts;
+``sharedContent.db``: links and content shared from the phone; their value
+formats are not publicly documented) are listed as unrecognised with their
+tables and row counts.
 
 Phone Link for iPhone (Bluetooth MAP/PBAP/HFP) keeps little or nothing on
 disk according to Microsoft; what it stores has not been publicly documented.
@@ -30,6 +49,7 @@ disk according to Microsoft; what it stores has not been publicly documented.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 from collections import defaultdict
@@ -37,20 +57,30 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from ..model import Channel, IdKind, Observation, Validation, ident
+from ..model import Channel, Identifier, IdKind, Observation, Validation, ident
 from ..plugin import UNRECOGNISED, Context, Plugin, register
 from ..readers.sqlite import SafeDB
 from ..readers.sqlite_wal import RowVersion, recover_table_versions
-from ..timeutil import from_filetime, from_unix, from_unix_auto
+from ..timeutil import from_filetime, from_iso, from_unix, from_unix_auto
 
 PKG = "AppData/Local/Packages/Microsoft.YourPhone_8wekyb3d8bbwe"
 INDEXED = f"{PKG}/LocalCache/Indexed"
+METADATA = f"{PKG}/LocalCache/DeviceMetadataStorage.json"
 
 _CALL_TYPES = {1: "incoming", 2: "outgoing", 3: "missed", 4: "voicemail", 5: "rejected",
                6: "blocked", 7: "answered_externally"}
 _MSG_TYPES = {1: "received", 2: "sent"}
 _HANDLED = {"phone.db", "contacts.db", "calling.db", "notifications.db", "photos.db",
-            "settings.db", "phoneapps.db"}
+            "settings.db", "phoneapps.db", "devicedata.db"}
+_RCS_TABLES = {"rcs_chat", "rcs_conversation", "rcs_filetransfer"}
+# Sync bookkeeping present in every Phone Link database; holds nothing about the phone.
+_BOOKKEEPING = {"content_sequence", "sqlite_sequence", "_change_notifications"}
+# Databases whose tables are known by name but whose value formats are not publicly documented.
+_UNPARSED = {"continuity.db": "phone browser history (browser_history) and app hand-off contexts "
+                              "(continue_app_context)",
+             "sharedcontent.db": "links (shareduri) and content (sharedcontent) shared from the phone"}
+_OS = {"android": "android", "ios": "ios"}
+_IMAGE_MAGIC = ((b"\xff\xd8\xff", ".jpg"), (b"\x89PNG", ".png"), (b"GIF8", ".gif"))
 
 
 def _digits(number: str | None) -> str:
@@ -63,6 +93,62 @@ def _short(text: Any, n: int = 140) -> str:
     return t if len(t) <= n else t[: n - 1] + "…"
 
 
+def _image_ext(blob: bytes) -> str:
+    """File extension from an image's magic bytes; '.bin' when the format is not recognised."""
+    if blob[:4] == b"RIFF" and blob[8:12] == b"WEBP":
+        return ".webp"
+    return next((ext for magic, ext in _IMAGE_MAGIC if blob.startswith(magic)), ".bin")
+
+
+def _text(value: Any) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return None
+    return str(value).strip() or None
+
+
+class _DeviceMeta:
+    """One entry of DeviceMetadataStorage.json."""
+
+    def __init__(self, locator: str, account_key: str, entry: dict[str, Any], meta: dict[str, Any]):
+        inner = meta.get("Metadata") if isinstance(meta.get("Metadata"), dict) else {}
+        self.locator = locator
+        self.id = str(meta.get("Id") or "").strip().strip("{}").lower()
+        self.name = _text(inner.get("DisplayName"))
+        self.os_name = _text(inner.get("OsName"))
+        self.os_version = _text(inner.get("OsVersion"))
+        self.manufacturer = _text(inner.get("Manufacture"))
+        self.model = _text(inner.get("ModelName"))
+        self.phone_os = _OS.get((self.os_name or "").lower())
+        reg = meta.get("RegitrationTime", meta.get("RegistrationTime"))  # sic: Phone Link spells it "Regitration"
+        self.registered, self.last_seen = from_iso(reg), from_iso(meta.get("LastSeenTime"))
+        custom = inner.get("CustomData")
+        if isinstance(custom, str) and custom.strip():
+            with contextlib.suppress(ValueError):  # not JSON: kept as the raw string
+                custom = json.loads(custom)
+        self.data = {
+            "device_id": self.id, "display_name": self.name, "manufacturer": self.manufacturer,
+            "model": self.model, "model_version": _text(inner.get("ModelVersion")), "os_name": self.os_name,
+            "os_version": self.os_version, "client_type": _text(inner.get("ClientType")),
+            "client_version": _text(inner.get("ClientVersion")), "capabilities": inner.get("Capabilities"),
+            "is_linked": entry.get("IsLinked"), "is_enabled": inner.get("IsEnabled"),
+            "consent_version": inner.get("ConsentVersion"),
+            "distinguished_device_id": _text(meta.get("DistinguishedDeviceId")),
+            "registration_time_raw": reg, "last_seen_time_raw": meta.get("LastSeenTime"),
+            "custom_data": custom or None, "account_key": account_key,
+        }
+
+    def ids(self) -> list[Identifier | None]:
+        os_label = " ".join(v for v in (self.os_name, self.os_version) if v)
+        return [ident(IdKind.APP_DEVICE_ID, f"phonelink:{self.id}"), ident(IdKind.DEVICE_NAME, self.name),
+                ident(IdKind.MODEL, self.model), ident(IdKind.OS_VERSION, os_label if self.os_version else None)]
+
+    def describe(self) -> str:
+        hw = " ".join(v for v in (self.manufacturer, self.model) if v)
+        os_label = " ".join(v for v in (self.os_name, self.os_version) if v)
+        extra = ", ".join(v for v in (hw, os_label) if v)
+        return f"{self.name or '(no name)'}" + (f" ({extra})" if extra else "")
+
+
 class _Profile:
     def __init__(self, user: str, folder: Path):
         self.user = user
@@ -72,6 +158,14 @@ class _Profile:
         self.names: list[str] = []
         self.contacts: dict[str, str] = {}   # last digits of number -> display name
         self.phone_os: str | None = None
+        self.meta: _DeviceMeta | None = None
+
+    def apply(self, meta: _DeviceMeta) -> None:
+        """Label the profile's phone with what DeviceMetadataStorage.json records about it."""
+        self.meta = meta
+        for i in meta.ids():
+            self.add_id(i)
+        self.phone_os = meta.phone_os or self.phone_os
 
     def add_id(self, i) -> None:
         if i is not None and i not in self.ids:
@@ -143,23 +237,83 @@ class WindowsPhoneLink(Plugin):
     os = "windows"
     channel = Channel.PHONE_LINK
     description = __doc__ or ""
-    paths = [f"Users/*/{INDEXED}/**"]
+    paths = [f"Users/*/{INDEXED}/**", f"Users/*/{METADATA}"]
     references = [
         "https://github.com/EricZimmerman/SQLECmd/tree/master/SQLMap/Maps (Windows_YourPhone_*.smap)",
         "https://github.com/kacos2000/Win10/tree/master/YourPhone",
         "https://github.com/labcif/YPA (Domingues et al., 'Digital forensic artifacts of the Your Phone "
         "application in Windows 10', FSI: Digital Investigation, 2019)",
         "https://github.com/Mxhlix/psst (notifications.db schema and WAL behaviour, 2026)",
-        "https://github.com/petrroll/phonelink-cli (Phone Link 1.26091 data store, 2026)",
+        "https://github.com/petrroll/phonelink-cli (Phone Link 1.26091 data store, 2026; reads rcs_chat and "
+        "rcs_filetransfer through Phone Link's message library, rcs_conversation.fallback_id as the SMS/MMS thread)",
     ]
     validation = Validation.SYNTHETIC
 
     def run(self, ctx: Context) -> None:
+        metadata: dict[str, dict[str, _DeviceMeta]] = {}
+        for user, path in ctx.user_files(METADATA):
+            metadata[user] = self._metadata_file(ctx, user, path)
         for user, folder in ctx.user_dirs(f"{INDEXED}/*"):
             dbdir = ctx.child(folder, "System", "Database")
             if dbdir is None or not dbdir.is_dir():
                 continue
-            self._profile(ctx, _Profile(user, folder), dbdir)
+            prof = _Profile(user, folder)
+            meta = metadata.get(user, {}).get(folder.name.lower())
+            if meta is not None:
+                prof.apply(meta)
+            self._profile(ctx, prof, dbdir)
+
+    # -- DeviceMetadataStorage.json -------------------------------------------------
+
+    def _metadata_file(self, ctx: Context, user: str, path: Path) -> dict[str, _DeviceMeta]:
+        """Report every registered device; returns the entries by device id."""
+        found: dict[str, _DeviceMeta] = {}
+        with ctx.file_scope(path) as n:
+            try:
+                doc = json.loads(ctx.read_text(path).lstrip("﻿"))
+            except ValueError as exc:
+                ctx.cover(path, UNRECOGNISED, note=f"not valid JSON: {exc}")
+                return found
+            devices = doc.get("DeviceMetadatas") if isinstance(doc, dict) else None
+            if not isinstance(devices, dict):
+                ctx.cover(path, UNRECOGNISED, note="no DeviceMetadatas object; structure not known")
+                return found
+            this_pc = (ctx.system.details.get("computer_name") or "").lower()
+            for key, entries in devices.items():
+                for i, entry in enumerate(entries if isinstance(entries, list) else [entries]):
+                    loc = f"json:$.DeviceMetadatas.{key}[{i}]"
+                    meta = entry.get("Metadata") if isinstance(entry, dict) else None
+                    if not isinstance(meta, dict) or not str(meta.get("Id") or "").strip("{} "):
+                        ctx.warn(f"{loc}: entry has no Metadata.Id; not parsed", path)
+                        continue
+                    dm = _DeviceMeta(loc, key, entry, meta)
+                    found[dm.id] = dm
+                    n[0] += self._registered_device(ctx, user, path, dm, this_pc)
+        return found
+
+    def _registered_device(self, ctx: Context, user: str, path: Path, dm: _DeviceMeta, this_pc: str) -> int:
+        is_phone = dm.phone_os is not None
+        named_like_pc = bool(this_pc) and (dm.name or "").lower() == this_pc
+        # The file also lists the computer itself (and other PCs): Windows entries are never attributed.
+        ids = [] if (dm.os_name or "").lower() == "windows" else dm.ids()
+        what = "Phone" if is_phone else f"{dm.os_name or 'Unknown OS'} device"
+        note = "; its name matches this computer's name" if named_like_pc else ""
+        data = {**dm.data, "name_matches_this_computer": named_like_pc}
+        events = [("phonelink_device_registered", dm.registered, "RegitrationTime", "registered with Phone Link"),
+                  ("phonelink_device_last_seen", dm.last_seen, "LastSeenTime", "last seen by Phone Link")]
+        count = 0
+        for event, ts, field, verb in events:
+            if ts is None and event == "phonelink_device_last_seen":
+                continue
+            ctx.emit(Observation(
+                artifact=self.id, event=event, message=f"{what} {dm.describe()} {verb}{note}",
+                channel=Channel.PHONE_LINK, timestamp=ts,
+                timestamp_desc=f"{field} (DeviceMetadataStorage.json)" if ts else "",
+                provenance=ctx.prov(path, f"{dm.locator}.Metadata.{field}"), device_ids=ids,
+                data=data, phone_os=dm.phone_os, device_class="phone" if is_phone else None, user=user,
+            ))
+            count += 1
+        return count
 
     # -- profile ------------------------------------------------------------------
 
@@ -174,11 +328,11 @@ class WindowsPhoneLink(Plugin):
                if p.is_file() and p.name.lower().endswith(".db")}
         # Contacts first so messages and calls can show names; phone.db next for identity.
         order = ["contacts.db", "phone.db", "calling.db", "notifications.db", "photos.db",
-                 "settings.db", "phoneapps.db"]
+                 "settings.db", "phoneapps.db", "devicedata.db"]
         handlers = {
             "contacts.db": self._contacts_db, "phone.db": self._phone_db, "calling.db": self._calling_db,
             "notifications.db": self._notifications_db, "photos.db": self._photos_db,
-            "settings.db": self._apps_db, "phoneapps.db": self._apps_db,
+            "settings.db": self._apps_db, "phoneapps.db": self._apps_db, "devicedata.db": self._device_data_db,
         }
         inventory = []
         for name in order:
@@ -190,23 +344,39 @@ class WindowsPhoneLink(Plugin):
                      "wal_size": wal.stat().st_size if wal.is_file() else None}
             inventory.append(entry)
             if name not in _HANDLED:
-                with ctx.file_scope(path), ctx.sqlite(path) as db:
-                    ctx.cover(path, UNRECOGNISED,
-                              note="database not parsed by Connected Phone Forensics; tables: " + ", ".join(
-                                  f"{t}({len(c)} cols)" for t, c in db.schema.tables.items()))
+                self._unparsed_db(ctx, path, _UNPARSED.get(name))
         mtime = from_unix(prof.folder.stat().st_mtime)
+        names = prof.names + ([prof.meta.describe()] if prof.meta else [])
         ctx.emit(Observation(
             artifact=self.id, event="phonelink_profile",
             message=f"Phone Link profile {prof.device_id} for a linked phone"
-                    + (f" ({', '.join(prof.names)})" if prof.names else "")
+                    + (f" ({', '.join(names)})" if names else "")
                     + f": {len(dbs)} database(s)",
             channel=Channel.PHONE_LINK, timestamp=mtime,
             timestamp_desc="Profile folder modified (filesystem time)", time_source="filesystem",
             provenance=ctx.prov(dbdir, "folder"), device_ids=prof.ids, phone_os=prof.phone_os,
             device_class="phone", user=prof.user,
             data={"device_id": prof.device_id, "legacy_names": prof.names, "databases": inventory,
+                  "device_metadata": prof.meta.locator if prof.meta else None,
                   "note": "profiles persist after unlinking; presence does not prove a current link"},
         ))
+
+    def _unparsed_db(self, ctx: Context, path: Path, what: str | None) -> None:
+        with ctx.file_scope(path), ctx.sqlite(path) as db:
+            ctx.cover(path, UNRECOGNISED, note=self._unparsed_note(db, what))
+
+    def _unparsed_note(self, db: SafeDB, what: str | None) -> str:
+        tables = ", ".join(f"{t}({len(c)} cols, {self._count(db, t)} rows)" for t, c in db.schema.tables.items())
+        known = (f"Phone Link database for {what}; not parsed because its value formats are not publicly "
+                 "documented" if what else "database not parsed by Connected Phone Forensics")
+        return f"{known}; tables: {tables}"
+
+    @staticmethod
+    def _count(db: SafeDB, table: str) -> int | str:
+        try:
+            return next(db.rows(f'SELECT count(*) FROM "{table}"'))[0]
+        except Exception as exc:  # noqa: BLE001 - a broken table must not hide the others
+            return f"unreadable: {type(exc).__name__}"
 
     def _obs(self, ctx, prof, path, table, rowid, event, message, ts, desc, data, version=None, status=None):
         if status:
@@ -264,12 +434,16 @@ class WindowsPhoneLink(Plugin):
     def _phone_db(self, ctx: Context, prof: _Profile, path: Path) -> None:
         with ctx.file_scope(path) as n, ctx.sqlite(path) as db:
             sc = db.schema
-            if not (sc.has("message") or sc.has("mms") or sc.has("subscription")):
-                ctx.cover(path, UNRECOGNISED, note=f"no message/mms/subscription tables; schema {sc.fingerprint()}")
+            if not (sc.has("message") or sc.has("mms") or sc.has("subscription") or sc.has("rcs_chat")):
+                ctx.cover(path, UNRECOGNISED,
+                          note=f"no message/mms/rcs_chat/subscription tables; schema {sc.fingerprint()}")
                 return
+            own_numbers: dict[Any, str] = {}
             if sc.has("subscription", "number"):
                 for r in db.select("subscription", ["subscription_id", "sim_slot_index", "number", "name",
                                                     "country_iso", "is_default_sms_subscription"]):
+                    if r["number"]:
+                        own_numbers[r["subscription_id"]] = r["number"]
                     prof.add_id(ident(IdKind.PHONE_NUMBER, r["number"]))
                     prof.phone_os = prof.phone_os or "android"
                     self._obs(ctx, prof, path, "subscription", r["_rowid_"], "phone_subscription",
@@ -308,9 +482,63 @@ class WindowsPhoneLink(Plugin):
                     n[0] += self._mms(ctx, prof, path, dict(r), r["_rowid_"], parts, threads)
                 for status, row, ver in recovered_rows(db, path, "mms", ctx.warn):
                     n[0] += self._mms(ctx, prof, path, row, ver.rowid, parts, threads, ver, status)
-            for t in sorted(x for x in sc.tables if x.startswith("rcs")):
+            n[0] += self._rcs_tables(ctx, prof, path, db, own_numbers)
+            for t in sorted(x for x in sc.tables if x.startswith("rcs") and x not in _RCS_TABLES):
                 ctx.warn(f"RCS table '{t}' present but not parsed (schema not publicly verified); "
                          f"columns: {', '.join(sc.columns(t))}", path)
+
+    def _rcs_tables(self, ctx, prof, path, db: SafeDB, own_numbers: dict[Any, str]) -> int:
+        sc = db.schema
+        threads: dict[Any, dict[str, Any]] = {}
+        if sc.has("rcs_conversation", "thread_id"):
+            for r in db.select("rcs_conversation", ["thread_id", "fallback_id", "recipient_list", "type",
+                                                    "msg_count"]):
+                threads[r["thread_id"]] = dict(r)
+        count = 0
+        common = ["message_id", "thread_id", "content_type", "status", "from_address", "type", "timestamp",
+                  "pc_status", "subscription_id", "message_type", "session_id", "is_user_action_required"]
+        for table, extra in (("rcs_chat", ["body"]), ("rcs_filetransfer", ["name", "size", "blob"])):
+            if not sc.has(table, "message_id"):
+                continue
+            for r in db.select(table, common + extra):
+                count += self._rcs(ctx, prof, path, table, dict(r), r["_rowid_"], threads, own_numbers)
+            for status, row, ver in recovered_rows(db, path, table, ctx.warn):
+                count += self._rcs(ctx, prof, path, table, row, ver.rowid, threads, own_numbers, ver, status)
+        return count
+
+    def _rcs(self, ctx, prof, path, table, r, rowid, threads, own_numbers, ver=None, status=None) -> int:
+        direction = _MSG_TYPES.get(r.get("type"), f"type_{r.get('type')}")
+        thread = threads.get(r.get("thread_id")) or {}
+        to = [thread["recipient_list"]] if thread.get("recipient_list") else []
+        if direction == "received":
+            party = f"from {prof.who(r.get('from_address'))}"
+        else:
+            party = f"to {', '.join(prof.who(a) for a in to) or 'unknown'}"
+        data = {"message_id": r.get("message_id"), "thread_id": r.get("thread_id"), "direction": direction,
+                "from": r.get("from_address"), "to": to, "sms_mms_thread_id": thread.get("fallback_id"),
+                "thread_type": thread.get("type"), "content_type": r.get("content_type"),
+                "message_type": r.get("message_type"), "session_id": r.get("session_id"),
+                "status": r.get("status"), "pc_status": r.get("pc_status"),
+                "subscription_id": r.get("subscription_id"), "own_number": own_numbers.get(r.get("subscription_id")),
+                "is_user_action_required": r.get("is_user_action_required")}
+        ts = from_filetime(r.get("timestamp"))
+        if table == "rcs_chat":
+            data["body"] = r.get("body")
+            self._obs(ctx, prof, path, table, rowid, f"rcs_{direction}", f"RCS {party}: {_short(r.get('body'))}",
+                      ts, f"Message {direction}", data, ver, status)
+            return 1
+        name, blob = r.get("name"), r.get("blob")
+        attachment = {"name": name, "content_type": r.get("content_type"), "size": r.get("size")}
+        if isinstance(blob, (bytes, bytearray)) and blob:
+            where = f"recovered_{ver.source}{'' if ver.frame is None else ver.frame}_" if ver else ""
+            attachment.update(ctx.export(f"{prof.device_id}/rcs/{where}{r.get('message_id')}_{name or 'file'}",
+                                         bytes(blob)))
+        data["attachment"] = attachment
+        size = f", {r.get('size')} bytes" if r.get("size") is not None else ""
+        self._obs(ctx, prof, path, table, rowid, f"rcs_file_{direction}",
+                  f"RCS file {party}: {name or '(no name)'} ({r.get('content_type') or 'type unknown'}{size})",
+                  ts, f"File transfer {direction}", data, ver, status)
+        return 1
 
     def _sms(self, ctx, prof, path, r, rowid, recipients, threads, ver=None, status=None) -> int:
         direction = _MSG_TYPES.get(r.get("type"), f"type_{r.get('type')}")
@@ -445,6 +673,37 @@ class WindowsPhoneLink(Plugin):
                 self._obs(ctx, prof, path, table, r["_rowid_"], "photo",
                           f"Photo {r['name']}" + (f" ({r['uri']})" if r["uri"] else ""), ts, desc, data)
                 n[0] += 1
+
+    # -- deviceData.db ------------------------------------------------------------------------------
+
+    def _device_data_db(self, ctx: Context, prof: _Profile, path: Path) -> None:
+        with ctx.file_scope(path) as n, ctx.sqlite(path) as db:
+            sc = db.schema
+            if not sc.has("wallpaper", "blob"):
+                ctx.cover(path, UNRECOGNISED, note=self._unparsed_note(db, None))
+                return
+            cols = ["wallpaper_type", "wallpaper_id", "blob"]
+            for r in db.select("wallpaper", cols):
+                n[0] += self._wallpaper(ctx, prof, path, dict(r), r["_rowid_"])
+            for status, row, ver in recovered_rows(db, path, "wallpaper", ctx.warn):
+                n[0] += self._wallpaper(ctx, prof, path, row, ver.rowid, ver, status)
+            for t in sorted(set(sc.tables) - _BOOKKEEPING - {"wallpaper"}):
+                ctx.warn(f"table '{t}' in deviceData.db not parsed ({self._count(db, t)} rows); "
+                         f"columns: {', '.join(sc.columns(t))}", path)
+
+    def _wallpaper(self, ctx, prof, path, r, rowid, ver=None, status=None) -> int:
+        blob = r.get("blob")
+        exported = None
+        if isinstance(blob, (bytes, bytearray)) and blob:
+            where = f"recovered_{ver.source}{'' if ver.frame is None else ver.frame}_" if ver else ""
+            exported = ctx.export(f"{prof.device_id}/wallpaper/{where}{r.get('wallpaper_type')}_"
+                                  f"{r.get('wallpaper_id')}{_image_ext(bytes(blob))}", bytes(blob))
+        data = {"wallpaper_type": r.get("wallpaper_type"), "wallpaper_id": r.get("wallpaper_id"), "export": exported}
+        size = f", {exported['size']} bytes" if exported else ", no image data"
+        self._obs(ctx, prof, path, "wallpaper", rowid, "phone_wallpaper",
+                  f"Phone wallpaper (type {r.get('wallpaper_type')}, id {r.get('wallpaper_id')}){size}",
+                  None, "", data, ver, status)
+        return 1
 
     # -- settings.db / phoneapps.db --------------------------------------------------------------
 
