@@ -22,7 +22,9 @@ jobs:
         if: runner.os != 'Linux'
         run: python -m pip install -e ".[gui]"
       - run: python -m ruff check connected_phone_forensics tests
-      - run: python -m pytest
+      - name: Report failing tests as annotations
+        run: python -m pip install pytest-github-actions-annotate-failures
+      - run: python -m pytest -rfE
       - name: CLI smoke test
         run: |
           cpf --version
