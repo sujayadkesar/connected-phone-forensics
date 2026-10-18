@@ -100,6 +100,30 @@ datasets are the most valuable help the project can get.
 | `coverage.csv` | Every evidence file touched and its parse status |
 | `manifest.json` | Run metadata, evidence hashes, warnings |
 
+## Desktop app
+
+```
+pip install "tether-dfir[gui]"
+cpf-gui
+```
+
+The desktop app (PySide6) runs the same scan and writes the same output
+folder as the command line, with:
+
+* **New scan**: drop the evidence folder; the computers inside it are listed
+  before you start. Name the case, pick parsers, start.
+* **Live progress**: parsers run in parallel threads; steps, counts and an
+  activity log update as they finish, and a scan can be cancelled.
+* **Overview, Devices, Timeline, Coverage, Issues**: every phone with its
+  identifiers, connections, why records were linked and which records may be
+  the same phone; a filterable timeline where each record shows its source
+  file, record locator and SHA-256; every file read and its parse status.
+* **Open results folder** reopens any earlier scan's output, and recent cases
+  are listed on the start page. Light and dark themes.
+
+Keyboard: Ctrl+N new scan, Ctrl+O open results, Ctrl+F search, Ctrl+1 to
+Ctrl+6 switch pages.
+
 ## Try it without evidence
 
 ```
@@ -107,7 +131,8 @@ tether demo ./demo
 ```
 
 builds a synthetic case (a Windows laptop, a MacBook and a Linux desktop
-that one iPhone and one Pixel touched) and scans it. Every byte is
+that one iPhone and one Pixel touched) and scans it (in the desktop app:
+**Run the demo case**). Every byte is
 synthetic; it shows what a report looks like and how records about the
 same phone are linked across computers.
 

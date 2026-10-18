@@ -20,7 +20,7 @@ def _cmd_scan(args: argparse.Namespace) -> int:
         result = scan(args.input, plugin_ids=plugin_ids, workdir=args.workdir, case=case,
                       progress=None if args.quiet else stderr_progress,
                       export_dir=None if args.no_export else Path(args.output) / "exports",
-                      assume_same=args.assume_same)
+                      assume_same=args.assume_same, workers=args.workers)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -115,6 +115,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--assume-same", action="append", default=[], metavar="KIND=VALUE,KIND=VALUE",
                    help="record an examiner conclusion that these strong identifiers are one phone "
                         "(e.g. udid=...,bt_mac=...); repeatable; listed in the report and manifest")
+    s.add_argument("--workers", type=int, metavar="N",
+                   help="parser threads (default: one per CPU, at most 8; 1 runs parsers one at a time)")
     s.add_argument("-q", "--quiet", action="store_true")
     s.set_defaults(func=_cmd_scan)
 

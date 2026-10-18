@@ -3,7 +3,7 @@
 ```
 evidence dir ──► discover_systems ──► SystemRoot (windows | macos | linux, users, details)
                                            │
-                     for each plugin whose os matches
+              for each plugin whose os matches, on a thread pool
                                            ▼
                         Plugin.run(Context) ──► Observation(s) + coverage + warnings
                                            │
@@ -90,3 +90,36 @@ merge reason and in the manifest.
 * `manifest.json`: tool version, command line, systems, plugins and their
   validation levels, examiner assertions, warnings, and the SHA-256 of
   every evidence file read.
+
+## Scan engine (`tether/engine.py`)
+
+`scan()` runs every (system, plugin) pair on a thread pool (`workers`,
+default one per CPU up to 8; `--workers 1` runs them one at a time). Results
+are merged in a fixed order (systems as discovered, plugins by id), so the
+output is identical whatever order the parsers finish in. Library warnings
+are attributed to the plugin running on the thread that logged them.
+Callers get one-line `progress` messages and structured `on_event` events
+(`discovered`, `task_done`, `correlating`) on the calling thread, and can
+stop a scan with a `cancel` event (`ScanCancelled` is raised once the
+running parsers finish; nothing is written).
+
+## Desktop app (`tether/gui/`)
+
+PySide6, optional (`pip install -e ".[gui]"`, entry point `cpf-gui`).
+
+* `jobs.py`: scans, case loading and evidence previews run on Qt's thread
+  pool; results come back as signals on the UI thread.
+* `casedata.py`: the GUI works on the same records the output folder holds
+  (`devices.json`, `observations.jsonl`, `coverage.csv`, `manifest.json`),
+  built either from a finished `ScanResult` or by reading a saved folder, so
+  a reopened case looks exactly like a fresh one.
+* `models.py`: table models filter and sort a list of row indexes in plain
+  Python rather than through `QSortFilterProxyModel`, so 100,000-record
+  timelines filter in about a tenth of a second and only visible rows are
+  formatted.
+* `theme.py` / `widgets.py`: one palette per theme; widgets read colours
+  when they paint, so switching theme needs no rebuild. Connection colours
+  are a colour-blind-checked categorical palette and always sit next to a
+  text label.
+* `pages/`: New scan, scan progress, Overview, Devices, Timeline, Coverage,
+  Issues.

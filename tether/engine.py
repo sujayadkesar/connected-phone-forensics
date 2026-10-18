@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
+import threading
 import traceback
+from collections import defaultdict
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -54,15 +58,33 @@ def parse_assertion(text: str) -> list[Identifier]:
     return ids
 
 
+class ScanCancelled(Exception):
+    """Raised by :func:`scan` when its ``cancel`` event was set."""
+
+
+def default_workers() -> int:
+    return max(1, min(8, os.cpu_count() or 2))
+
+
 class _Capture(logging.Handler):
-    """Collect warnings from parsing libraries so they reach the report, not the console."""
+    """Collect warnings from parsing libraries so they reach the report, not the console.
+
+    Plugins run on worker threads; each record is kept with the thread that logged
+    it, so it is reported against the plugin running on that thread.
+    """
 
     def __init__(self) -> None:
         super().__init__(logging.WARNING)
-        self.records: list[str] = []
+        self._lock = threading.Lock()
+        self._by_thread: dict[int, list[str]] = defaultdict(list)
 
     def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(f"{record.name}: {record.getMessage()}")
+        with self._lock:
+            self._by_thread[record.thread or 0].append(f"{record.name}: {record.getMessage()}")
+
+    def take(self, thread: int | None = None) -> list[str]:
+        with self._lock:
+            return list(dict.fromkeys(self._by_thread.pop(thread or threading.get_ident(), [])))
 
 
 def _sort_key(obs: Observation):
@@ -73,20 +95,49 @@ def _sort_key(obs: Observation):
 def scan(input_path: Path | str, plugin_ids: list[str] | None = None,
          workdir: Path | None = None, case: dict[str, str] | None = None,
          progress: Callable[[str], None] | None = None,
-         export_dir: Path | None = None, assume_same: list[str] | None = None) -> ScanResult:
+         export_dir: Path | None = None, assume_same: list[str] | None = None,
+         workers: int | None = None, on_event: Callable[[dict], None] | None = None,
+         cancel: threading.Event | None = None) -> ScanResult:
+    """Scan ``input_path``; parsers run on ``workers`` threads (default: one per CPU, at most 8).
+
+    ``progress`` receives one-line messages, ``on_event`` structured events
+    (``discovered``, ``task_done``, ``correlating``); both are called on the
+    calling thread. Setting ``cancel`` stops the scan once the running parsers
+    finish and raises :class:`ScanCancelled`.
+    """
     say = progress or (lambda _msg: None)
+    emit = on_event or (lambda _event: None)
     capture = _Capture()
     lib_logger = logging.getLogger("regipy")
     lib_logger.setLevel(logging.WARNING)
     lib_logger.propagate = False
     lib_logger.addHandler(capture)
     try:
-        return _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same or [])
+        return _scan(input_path, plugin_ids, workdir, case, say, emit, capture, export_dir,
+                     assume_same or [], workers or default_workers(), cancel or threading.Event())
     finally:
         lib_logger.removeHandler(capture)
 
 
-def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assume_same) -> ScanResult:
+def _run_plugin(cls: type[Plugin], system: SystemRoot, workdir, export_dir, capture: _Capture,
+                cancel: threading.Event) -> Context | None:
+    if cancel.is_set():
+        return None
+    plugin: Plugin = cls()
+    ctx = Context(plugin, system, workdir, export_dir)
+    try:
+        plugin.run(ctx)
+    except Exception as exc:  # noqa: BLE001 - one plugin must not abort the scan
+        ctx.warn(f"plugin crashed: {type(exc).__name__}: {exc}\n{traceback.format_exc(limit=5)}")
+        ctx.coverage.append(CoverageEntry(plugin.id, system.label, "", ERROR,
+                                          note=f"plugin crashed: {exc}"))
+    for msg in capture.take():
+        ctx.warn(f"library warning: {msg}")
+    return ctx
+
+
+def _scan(input_path, plugin_ids, workdir, case, say, emit, capture, export_dir, assume_same,
+          workers, cancel) -> ScanResult:
     asserted = [parse_assertion(a) for a in assume_same]  # validate before any work
     started = datetime.now(timezone.utc)
     registry = load_plugins()
@@ -98,36 +149,42 @@ def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assum
 
     systems = discover_systems(input_path)
     say(f"found {len(systems)} system(s) under {input_path}")
-    observations: list[Observation] = []
-    coverage: list[CoverageEntry] = []
-    warnings: list[Warning_] = []
-    plugins_run: list[dict] = []
-
     for system in systems:
         say(f"[{system.label}] {system.os}, users: {', '.join(u.name for u in system.users) or '-'}")
-        for cls in registry.values():
-            if cls.os != system.os:
-                continue
-            plugin: Plugin = cls()
-            ctx = Context(plugin, system, workdir, export_dir)
-            try:
-                plugin.run(ctx)
-            except Exception as exc:  # noqa: BLE001 - one plugin must not abort the scan
-                ctx.warn(f"plugin crashed: {type(exc).__name__}: {exc}\n{traceback.format_exc(limit=5)}")
-                ctx.coverage.append(CoverageEntry(plugin.id, system.label, "", ERROR,
-                                                  note=f"plugin crashed: {exc}"))
-            for msg in dict.fromkeys(capture.records):
-                ctx.warn(f"library warning: {msg}")
-            capture.records.clear()
-            observations.extend(ctx.observations)
-            coverage.extend(ctx.coverage)
-            warnings.extend(ctx.warnings)
-            if ctx.coverage or ctx.observations:
-                say(f"[{system.label}]   {plugin.id}: {len(ctx.observations)} observation(s) "
-                    f"from {len(ctx.coverage)} file(s)")
-            plugins_run.append({**cls.meta(), "system": system.label,
-                                "observations": len(ctx.observations),
-                                "files": len(ctx.coverage)})
+    tasks = [(system, cls) for system in systems for cls in registry.values() if cls.os == system.os]
+    emit({"type": "discovered", "tasks": len(tasks), "workers": workers,
+          "systems": [{"label": s.label, "os": s.os, "users": [u.name for u in s.users]} for s in systems]})
+    observations: list[Observation] = []
+    coverage: list[CoverageEntry] = []
+    warnings: list[Warning_] = [Warning_("discovery", "", f"library warning: {m}")
+                                for m in capture.take()]
+    plugins_run: list[dict] = []
+
+    contexts: list[Context | None] = [None] * len(tasks)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="tether-parser") as pool:
+        futures = {pool.submit(_run_plugin, cls, system, workdir, export_dir, capture, cancel): i
+                   for i, (system, cls) in enumerate(tasks)}
+        for done, fut in enumerate(as_completed(futures), 1):
+            i = futures[fut]
+            ctx = contexts[i] = fut.result()
+            system, cls = tasks[i]
+            n_obs, n_files = (len(ctx.observations), len(ctx.coverage)) if ctx else (0, 0)
+            if n_obs or n_files:
+                say(f"[{system.label}]   {cls.id}: {n_obs} observation(s) from {n_files} file(s)")
+            emit({"type": "task_done", "done": done, "total": len(tasks), "system": system.label,
+                  "plugin": cls.id, "name": cls.name, "observations": n_obs, "files": n_files,
+                  "warnings": len(ctx.warnings) if ctx else 0})
+    if cancel.is_set():
+        raise ScanCancelled("scan cancelled")
+
+    # Merge in task order (systems as discovered, plugins by id), whatever order they finished in.
+    for (system, cls), ctx in zip(tasks, contexts, strict=True):
+        observations.extend(ctx.observations)
+        coverage.extend(ctx.coverage)
+        warnings.extend(ctx.warnings)
+        plugins_run.append({**cls.meta(), "system": system.label,
+                            "observations": len(ctx.observations),
+                            "files": len(ctx.coverage)})
 
     for text, ids in zip(assume_same, asserted, strict=True):
         observations.append(Observation(
@@ -137,6 +194,7 @@ def _scan(input_path, plugin_ids, workdir, case, say, capture, export_dir, assum
             device_ids=ids, data={"assertion": text, "examiner": (case or {}).get("examiner")},
         ))
     observations.sort(key=_sort_key)
+    emit({"type": "correlating", "observations": len(observations)})
     graph = build_graph(observations)
     say(f"correlated {len(observations)} observation(s) into {len(graph.devices)} device(s)")
     return ScanResult(
