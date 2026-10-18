@@ -124,8 +124,8 @@ def _identity_created(not_before: datetime | None, not_after: datetime | None,
 
 def _parse(ctx: Context, base_dirs) -> None:
     for _user, base in base_dirs:
-        trusted = ctx.fs.child(base, "trusted_devices")
-        cfg_path = ctx.fs.child(base, "config")
+        trusted = ctx.child(base, "trusted_devices")
+        cfg_path = ctx.child(base, "config")
         host_name = None
         if cfg_path and cfg_path.is_file():
             with ctx.file_scope(cfg_path):
@@ -150,7 +150,7 @@ def _parse(ctx: Context, base_dirs) -> None:
                 name = _qsettings_value(sec.get("name", ""))
                 dtype = _qsettings_value(sec.get("type", "")).lower() or None
                 cert = parse_pem_or_der(_qsettings_value(sec.get("certificate", "")).encode())
-                dev_dir = ctx.fs.child(base, dev_id)
+                dev_dir = ctx.child(base, dev_id)
                 plugins = sorted(p.name for p in dev_dir.iterdir() if p.is_dir()) if dev_dir and dev_dir.is_dir() else []
                 ids = [ident(IdKind.APP_DEVICE_ID, f"kdeconnect:{dev_id}"), ident(IdKind.DEVICE_NAME, name)]
                 data = {

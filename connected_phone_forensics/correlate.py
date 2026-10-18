@@ -189,7 +189,26 @@ def _infer_class(dev: Device, votes: Counter) -> str | None:
     return None
 
 
+_LABEL_ID_ORDER = [IdKind.UDID, IdKind.SERIAL, IdKind.IMEI, IdKind.MEID, IdKind.USB_SERIAL, IdKind.WIFI_MAC,
+                   IdKind.BT_MAC, IdKind.APP_DEVICE_ID]
+_ID_NAMES = {IdKind.UDID: "UDID", IdKind.SERIAL: "serial", IdKind.IMEI: "IMEI", IdKind.MEID: "MEID",
+             IdKind.USB_SERIAL: "USB serial", IdKind.WIFI_MAC: "Wi-Fi", IdKind.BT_MAC: "Bluetooth"}
+_APP_NAMES = {"phonelink": "Phone Link", "kdeconnect": "KDE Connect", "win_container": "container"}
+
+
+def _noun(dev: Device) -> str:
+    """What to call a device that has no name: 'iPhone', 'Android phone', 'Headphones'..."""
+    cls = dev.device_class or "phone"
+    if dev.phone_os == "ios":
+        return {"phone": "iPhone", "tablet": "iPad"}.get(cls, "Apple device")
+    if dev.phone_os == "android":
+        return {"phone": "Android phone", "tablet": "Android tablet"}.get(cls, "Android device")
+    return {"phone": "Phone", "tablet": "Tablet", "audio": "Audio device", "wearable": "Wearable",
+            "computer": "Computer", "peripheral": "Peripheral"}.get(cls, "Device")
+
+
 def _label(dev: Device, names: Counter) -> str:
+    """A device's name: the name it reports, else its model, number, or kind plus a short identifier."""
     if names:
         return names.most_common(1)[0][0]
     models = sorted(i.value for i in dev.identifiers if i.kind == IdKind.MODEL)
@@ -198,12 +217,15 @@ def _label(dev: Device, names: Counter) -> str:
     numbers = sorted(i.value for i in dev.identifiers if i.kind == IdKind.PHONE_NUMBER)
     if numbers:
         return f"Phone line {numbers[0]}"
-    strong = sorted((i for i in dev.identifiers if i.strength == Strength.STRONG), key=str)
+    strong = sorted((i for i in dev.identifiers if i.strength == Strength.STRONG),
+                    key=lambda i: (_LABEL_ID_ORDER.index(i.kind) if i.kind in _LABEL_ID_ORDER else 99, str(i)))
     if strong:
-        kind, _, value = strong[0].value.partition(":") if strong[0].kind == IdKind.APP_DEVICE_ID else ("", "", "")
-        if value:
-            return f"{kind} device {value[:13]}"
-        return str(strong[0])
+        i = strong[0]
+        if i.kind == IdKind.APP_DEVICE_ID:
+            ns, _, value = i.value.partition(":")
+            return f"{_noun(dev)} ({_APP_NAMES.get(ns, ns)} {value.strip('{}')[:8]})"
+        short = i.value if len(i.value) <= 12 else "…" + i.value[-8:]
+        return f"{_noun(dev)} ({_ID_NAMES.get(i.kind, i.kind.value)} {short})"
     accounts = sorted(i.value for i in dev.identifiers if i.kind == IdKind.ACCOUNT)
     return f"Account {accounts[0]}" if accounts else "unknown device"
 
@@ -282,9 +304,9 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
             members = members_of[root]
             dev.merge_reasons = [r for (a, b), r in reasons.items()
                                  if a in members or b in members]
-        dev.label = _label(dev, names)
         dev.phone_os = _infer_os(dev, os_votes)
         dev.device_class = _infer_class(dev, class_votes)
+        dev.label = _label(dev, names)
         devices.append(dev)
 
     # Stable ordering: phones first, confirmed first, then earliest first-seen, then label.

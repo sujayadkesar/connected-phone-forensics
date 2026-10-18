@@ -62,10 +62,10 @@ def _load(ctx: Context, path: Path | None):
 
 
 def _parse_backup(ctx: Context, folder: Path) -> None:
-    info_p = ctx.fs.child(folder, "Info.plist")
-    manifest_p = ctx.fs.child(folder, "Manifest.plist")
-    status_p = ctx.fs.child(folder, "Status.plist")
-    mdb_p = ctx.fs.child(folder, "Manifest.db")
+    info_p = ctx.child(folder, "Info.plist")
+    manifest_p = ctx.child(folder, "Manifest.plist")
+    status_p = ctx.child(folder, "Status.plist")
+    mdb_p = ctx.child(folder, "Manifest.db")
     anchor = info_p or manifest_p or status_p
     if anchor is None:
         return

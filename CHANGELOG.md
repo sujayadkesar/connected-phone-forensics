@@ -6,6 +6,28 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-18
+
+Found by scanning a live Windows 11 system.
+
+### Fixed
+
+- Folders that cannot be listed (permissions, as on a live system or an image mounted with its ACLs
+  enforced) are reported as errors with a warning for every parser that needed them. Before, they
+  were treated as empty, so USB, Bluetooth and hotspot history silently came back with nothing.
+- Devices known only by an identifier get readable names, such as
+  "iPhone (UDID …3E46801C)" or "Android phone (USB serial E28E9340)".
+- macOS with older SQLite builds: OS build strings stored as numbers come back exactly.
+
+### Changed
+
+- `pip install connected-phone-forensics` installs the desktop app and the command line together.
+
+### Known issues
+
+The same as for 0.1.0 in [CHANGELOG.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/CHANGELOG.md#known-issues),
+except that unreadable folders are now reported.
+
 ## [0.1.0] - 2026-10-18
 
 First public release.
@@ -50,7 +72,6 @@ Found by a code review in October 2026 and not fixed in this release:
 - USB serials that vendors reuse across devices (for example `0123456789ABCDEF`) are treated as
   unique, so two different phones can merge into one device.
 - USB modems, MiFi devices and RNDIS gadgets can be counted as Android phones.
-- Folders that cannot be read (permissions) are treated as empty, without a warning.
 - A `#` or `?` in the temporary folder path makes a database open as empty.
 - Velociraptor's escaped folder names are not decoded, so files in such collections are missed.
 - Some deleted SQLite rows are not recovered.
@@ -58,5 +79,6 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.1
 [0.1.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.0

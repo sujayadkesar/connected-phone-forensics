@@ -156,7 +156,7 @@ class WindowsPhoneLink(Plugin):
 
     def run(self, ctx: Context) -> None:
         for user, folder in ctx.user_dirs(f"{INDEXED}/*"):
-            dbdir = ctx.fs.child(folder, "System", "Database")
+            dbdir = ctx.child(folder, "System", "Database")
             if dbdir is None or not dbdir.is_dir():
                 continue
             self._profile(ctx, _Profile(user, folder), dbdir)
@@ -164,7 +164,7 @@ class WindowsPhoneLink(Plugin):
     # -- profile ------------------------------------------------------------------
 
     def _profile(self, ctx: Context, prof: _Profile, dbdir: Path) -> None:
-        legacy = ctx.fs.child(prof.folder, "User")
+        legacy = ctx.child(prof.folder, "User")
         if legacy is not None and legacy.is_dir():
             for d in sorted(legacy.iterdir()):
                 if d.is_dir():

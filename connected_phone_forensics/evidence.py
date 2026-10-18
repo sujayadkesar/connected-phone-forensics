@@ -67,6 +67,7 @@ class EvidenceFS:
             raise NotADirectoryError(self.root)
         self._hashes: dict[Path, str] = {}
         self._rel: dict[Path, str] = {}
+        self._unreadable: dict[Path, str] = {}  # folders that exist but could not be listed, and why
 
     # -- listing ---------------------------------------------------------
 
@@ -81,14 +82,31 @@ class EvidenceFS:
                     except OSError:
                         continue
                 return tuple(sorted(out))
-        except OSError:
+        except (FileNotFoundError, NotADirectoryError):
+            return ()
+        except OSError as exc:
+            # Permissions, I/O errors: the folder is there but its contents are unknown. Remembered so
+            # callers can report it; an unreadable folder must never pass for an empty one.
+            self._unreadable[directory] = f"{type(exc).__name__}: {exc.strerror or exc}"
             return ()
 
-    def _match_component(self, directory: Path, pattern: str, dirs_only: bool) -> list[Path]:
+    def _entries(self, directory: Path, denied: dict[Path, str] | None) -> tuple[tuple[str, bool], ...]:
+        items = self._listdir(directory)
+        if denied is not None and directory in self._unreadable:
+            denied[directory] = self._unreadable[directory]
+        return items
+
+    @property
+    def unreadable(self) -> dict[Path, str]:
+        """Every folder found so far that could not be listed, with the reason."""
+        return dict(self._unreadable)
+
+    def _match_component(self, directory: Path, pattern: str, dirs_only: bool,
+                         denied: dict[Path, str] | None = None) -> list[Path]:
         pat = pattern.lower()
         wildcard = any(ch in pattern for ch in "*?[")
         out = []
-        for name, is_dir in self._listdir(directory):
+        for name, is_dir in self._entries(directory, denied):
             if dirs_only and not is_dir:
                 continue
             low = name.lower()
@@ -96,11 +114,11 @@ class EvidenceFS:
                 out.append(directory / name)
         return out
 
-    def _walk_dirs(self, directory: Path) -> Iterator[Path]:
+    def _walk_dirs(self, directory: Path, denied: dict[Path, str] | None = None) -> Iterator[Path]:
         yield directory
-        for name, is_dir in self._listdir(directory):
+        for name, is_dir in self._entries(directory, denied):
             if is_dir:  # symlinked directories are not followed (is_dir(follow_symlinks=False))
-                yield from self._walk_dirs(directory / name)
+                yield from self._walk_dirs(directory / name, denied)
 
     def glob(self, pattern: str) -> list[Path]:
         """Match a '/'-separated pattern relative to the root, case-insensitively.
@@ -108,6 +126,11 @@ class EvidenceFS:
         Supports ``*``, ``?``, ``[...]`` within a component and ``**`` for any
         number of directories.
         """
+        return self.glob_checked(pattern)[0]
+
+    def glob_checked(self, pattern: str) -> tuple[list[Path], dict[Path, str]]:
+        """Like :meth:`glob`, plus the folders on the way that could not be listed (folder -> reason)."""
+        denied: dict[Path, str] = {}
         parts = [p for p in pattern.replace("\\", "/").split("/") if p and p != "."]
         current = [self.root]
         for i, part in enumerate(parts):
@@ -115,20 +138,20 @@ class EvidenceFS:
             nxt: list[Path] = []
             if part == "**":
                 for d in current:
-                    nxt.extend(self._walk_dirs(d))
+                    nxt.extend(self._walk_dirs(d, denied))
             else:
                 for d in current:
-                    nxt.extend(self._match_component(d, part, dirs_only=not last))
+                    nxt.extend(self._match_component(d, part, dirs_only=not last, denied=denied))
             current = nxt
             if not current:
-                return []
+                return [], denied
         seen = set()
         result = []
         for p in current:
             if p not in seen:
                 seen.add(p)
                 result.append(p)
-        return result
+        return result, denied
 
     def find(self, pattern: str) -> Path | None:
         """First match for a pattern, or None."""
@@ -137,14 +160,18 @@ class EvidenceFS:
 
     def child(self, directory: Path, *names: str) -> Path | None:
         """Case-insensitive lookup of a literal relative path below ``directory`` (no globbing)."""
+        return self.child_checked(directory, *names)[0]
+
+    def child_checked(self, directory: Path, *names: str) -> tuple[Path | None, dict[Path, str]]:
+        denied: dict[Path, str] = {}
         cur = Path(directory)
         for name in names:
             low = name.lower()
-            hit = next((n for n, _d in self._listdir(cur) if n.lower() == low), None)
+            hit = next((n for n, _d in self._entries(cur, denied) if n.lower() == low), None)
             if hit is None:
-                return None
+                return None, denied
             cur = cur / hit
-        return cur
+        return cur, denied
 
     def files(self, pattern: str) -> list[Path]:
         return [p for p in self.glob(pattern) if p.is_file()]

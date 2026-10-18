@@ -211,7 +211,8 @@ More in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - **Hashed.** Every evidence file read is SHA-256 hashed; hashes, tool version and command line go
   into `manifest.json`.
 - **Nothing skipped silently.** Every file a parser opened is in the coverage table. A file whose
-  format is not recognised is reported as `unrecognised`, not dropped.
+  format is not recognised is reported as `unrecognised`, not dropped, and a folder that cannot be
+  read (for example the locked registry folder on a live system) is reported as an error.
 - **Honest time.** All times are UTC. Local-time artifacts are converted with the time zone recorded
   in the same image. Filesystem times are labelled as such and do not set a phone's first or last
   seen.

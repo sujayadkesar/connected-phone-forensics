@@ -1,6 +1,7 @@
 import hashlib
 import sqlite3
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -293,3 +294,44 @@ def test_csv_cells_cannot_become_formulas():
     assert csv_safe("-2+3+cmd|' /C calc'!A0") == "'-2+3+cmd|' /C calc'!A0"
     assert csv_safe("+1 (415) 555-0142") == "+1 (415) 555-0142"  # phone numbers stay readable
     assert csv_safe("-5") == "-5" and csv_safe("Jane's iPhone") == "Jane's iPhone" and csv_safe(7) == 7
+
+
+def test_unreadable_folder_is_reported_not_treated_as_empty(tmp_path, monkeypatch):
+    # A live system, or an image mounted with permissions enforced: the registry folder cannot be
+    # listed. Parsers that look there must say so instead of reporting no USB or Bluetooth history.
+    import os
+
+    from connected_phone_forensics.engine import scan
+
+    root = tmp_path / "C"
+    config = root / "Windows" / "System32" / "config"
+    config.mkdir(parents=True)
+    (config / "SYSTEM").write_bytes(b"regf")
+    (root / "Users" / "alice").mkdir(parents=True)
+    (root / "Users" / "alice" / "NTUSER.DAT").write_bytes(b"regf")
+    real_scandir = os.scandir
+
+    def scandir(path="."):
+        if Path(path).name.lower() == "config":
+            raise PermissionError(13, "Access is denied", str(path))
+        return real_scandir(path)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+    result = scan(tmp_path, plugin_ids=["win_usb_phones", "win_bluetooth"])
+    denied = [c for c in result.coverage if c.source_path == "Windows/System32/config"]
+    assert {c.plugin for c in denied} == {"win_usb_phones", "win_bluetooth"}
+    assert all(c.status == "error" and "could not be read" in c.note for c in denied)
+    assert sum("could not be read" in w.message for w in result.warnings) == 2
+
+
+def test_devices_without_a_name_get_a_readable_label():
+    def obs(*ids, **kw):
+        return Observation("a", "e", "m", Channel.USB, Provenance("p", "l", "a"), device_ids=list(ids), **kw)
+
+    graph = build_graph([
+        obs(ident(IdKind.UDID, "00008140-0001541E3E46801C")),
+        obs(ident(IdKind.USB_SERIAL, "E28E9340"), phone_os="android", device_class="phone"),
+        obs(ident(IdKind.APP_DEVICE_ID, "phonelink:f77b925a-6e5f-43e4-9baa-097c0b5d0711"), device_class="phone"),
+    ])
+    assert sorted(d.label for d in graph.devices) == [
+        "Android phone (USB serial E28E9340)", "Phone (Phone Link f77b925a)", "iPhone (UDID …3E46801C)"]

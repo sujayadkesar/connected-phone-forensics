@@ -115,24 +115,49 @@ class Context:
         self.observations: list[Observation] = []
         self.coverage: list[CoverageEntry] = []
         self.warnings: list[Warning_] = []
+        self._reported_unreadable: set[str] = set()
 
     # -- locating ----------------------------------------------------------
+    # Folders on the way that cannot be listed are reported (coverage error + warning), so a
+    # permission problem never reads as "nothing here".
+
+    def _glob(self, pattern: str) -> list[Path]:
+        hits, denied = self.fs.glob_checked(pattern)
+        self._report_unreadable(denied)
+        return hits
 
     def files(self, pattern: str) -> list[Path]:
-        return self.fs.files(pattern)
+        return [p for p in self._glob(pattern) if p.is_file()]
 
     def user_files(self, pattern: str) -> Iterator[tuple[str, Path]]:
         """Match ``pattern`` inside each user profile; yields (user name, path)."""
         for user in self.system.users:
             rel_home = self.fs.rel(user.home)
-            for p in self.fs.files(f"{_glob_escape(rel_home)}/{pattern}"):
+            for p in self.files(f"{_glob_escape(rel_home)}/{pattern}"):
                 yield user.name, p
 
     def user_dirs(self, pattern: str) -> Iterator[tuple[str, Path]]:
         for user in self.system.users:
             rel_home = self.fs.rel(user.home)
-            for p in self.fs.dirs(f"{_glob_escape(rel_home)}/{pattern}"):
-                yield user.name, p
+            for p in self._glob(f"{_glob_escape(rel_home)}/{pattern}"):
+                if p.is_dir():
+                    yield user.name, p
+
+    def child(self, directory: Path, *names: str) -> Path | None:
+        """Case-insensitive lookup of a literal path below ``directory``."""
+        hit, denied = self.fs.child_checked(directory, *names)
+        self._report_unreadable(denied)
+        return hit
+
+    def _report_unreadable(self, denied: dict[Path, str]) -> None:
+        for folder, why in denied.items():
+            rel = self.fs.rel(folder)
+            if rel in self._reported_unreadable:
+                continue
+            self._reported_unreadable.add(rel)
+            note = f"folder could not be read ({why}); nothing below it was examined"
+            self.coverage.append(CoverageEntry(self.plugin.id, self.system.label, rel, ERROR, 0, note))
+            self.warn(note, folder)
 
     # -- reading -----------------------------------------------------------
 
