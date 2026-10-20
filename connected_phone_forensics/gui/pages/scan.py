@@ -15,6 +15,7 @@ from ..widgets import (
     PageScroll,
     Spinner,
     button,
+    clear_layout,
     hbox,
     label,
     mono_font,
@@ -24,6 +25,7 @@ from ..widgets import (
 
 STEPS = [("discover", "Find computers"), ("parse", "Run parsers"), ("link", "Link devices"),
          ("write", "Write report")]
+LIVE_STEPS = [("acquire", "Acquire this computer"), *STEPS]
 
 
 class Step(QWidget):
@@ -74,6 +76,7 @@ class ScanPage(QWidget):
         super().__init__()
         self.window_ = window
         self._started = 0.0
+        self._live = False
         self._timer = QTimer(self, interval=250)
         self._timer.timeout.connect(self._tick)
 
@@ -86,13 +89,10 @@ class ScanPage(QWidget):
         card.body.addLayout(hbox(self.spinner, self.result_badge, vbox(self.title, self.subtitle, spacing=3),
                                  spacing=14))
 
-        self.steps = {key: Step(text, i) for i, (key, text) in enumerate(STEPS, 1)}
-        steps_row = hbox(spacing=0)
-        for i, step in enumerate(self.steps.values()):
-            if i:
-                steps_row.addStretch(1)
-            steps_row.addWidget(step)
-        card.body.addLayout(steps_row)
+        self.steps: dict[str, Step] = {}
+        self.steps_row = hbox(spacing=0)
+        self._build_steps(STEPS)
+        card.body.addLayout(self.steps_row)
 
         self.bar = QProgressBar()
         self.bar.setTextVisible(False)
@@ -101,13 +101,14 @@ class ScanPage(QWidget):
         self.elapsed = label("", "Small")
         card.body.addLayout(vbox(self.bar, hbox((self.status, 1), self.elapsed), spacing=8))
 
+        self.c_acquired = Counter("Files acquired")
         self.c_systems = Counter("Computers")
         self.c_parsers = Counter("Parsers finished")
         self.c_records = Counter("Records found")
         self.c_files = Counter("Files read")
         self.c_issues = Counter("Issues")
         counters = hbox(spacing=28)
-        for c in (self.c_systems, self.c_parsers, self.c_records, self.c_files, self.c_issues):
+        for c in (self.c_acquired, self.c_systems, self.c_parsers, self.c_records, self.c_files, self.c_issues):
             counters.addWidget(c)
         counters.addStretch(1)
         card.body.addLayout(counters)
@@ -137,33 +138,65 @@ class ScanPage(QWidget):
 
     # -- lifecycle -------------------------------------------------------------------
 
+    def _build_steps(self, steps: list[tuple[str, str]]) -> None:
+        clear_layout(self.steps_row)
+        self.steps = {key: Step(text, i) for i, (key, text) in enumerate(steps, 1)}
+        for i, step in enumerate(self.steps.values()):
+            if i:
+                self.steps_row.addStretch(1)
+            self.steps_row.addWidget(step)
+
     def begin(self, params: jobs.ScanParams) -> None:
         self._started = time.monotonic()
         self._timer.start()
-        self._records = self._files = self._issues = 0
-        self.title.setText("Building the demo case" if params.demo else "Scanning the evidence")
-        self.subtitle.setText(str(params.evidence))
+        self._live = params.live
+        self._records = self._files = self._issues = self._acquired = self._not_acquired = 0
+        self._build_steps(LIVE_STEPS if params.live else STEPS)
+        if params.live:
+            self.title.setText("Acquiring this computer")
+            self.subtitle.setText(f"{params.evidence} → {params.output}")
+        else:
+            self.title.setText("Building the demo case" if params.demo else "Scanning the evidence")
+            self.subtitle.setText(str(params.evidence))
         self.spinner.start()
         self.result_badge.hide()
         self.bar.setRange(0, 0)
-        self.status.setText("Looking for computers…")
+        self.status.setText("Saving the registry hives…" if params.live else "Looking for computers…")
         self.log.clear()
         self.error.hide()
+        self.cancel_btn.setText("Cancel" if params.live else "Cancel scan")
         self.cancel_btn.show()
         self.cancel_btn.setEnabled(True)
         self.back_btn.hide()
-        for c in (self.c_systems, self.c_parsers, self.c_records, self.c_files, self.c_issues):
+        self.c_acquired.setVisible(params.live)
+        for c in (self.c_acquired, self.c_systems, self.c_parsers, self.c_records, self.c_files, self.c_issues):
             c.set(0)
+        first = "acquire" if params.live else "discover"
         for key, step in self.steps.items():
-            step.set_state("active" if key == "discover" else "pending")
-        self._append(f"evidence: {params.evidence}")
+            step.set_state("active" if key == first else "pending")
+        self._append(f"evidence: {'this computer (live), ' if params.live else ''}{params.evidence}")
         self._append(f"output:   {params.output}")
 
     def on_event(self, ev: dict) -> None:
         kind = ev.get("type")
         if kind == "log":
             self._append(ev["message"])
+        elif kind == "acquire_stage":
+            self.status.setText(ev["message"] + "…")
+            self._append(ev["message"].lower())
+        elif kind == "acquire_item":
+            if ev["status"] == "acquired":
+                self._acquired += 1
+            else:
+                self._not_acquired += 1
+                self._issues += 1
+                self.c_issues.set(self._issues)
+                self._append(f"NOT acquired: {ev['path']}")
+            self.c_acquired.set(self._acquired)
+            self.status.setText(f"{self._acquired:,} item(s) copied · {ev['method']} · {ev['path']}")
         elif kind == "discovered":
+            if "acquire" in self.steps:
+                self.steps["acquire"].set_state("done")
             self.steps["discover"].set_state("done")
             self.steps["parse"].set_state("active")
             self.c_systems.set(len(ev["systems"]))
@@ -217,7 +250,7 @@ class ScanPage(QWidget):
             step.set_state("done")
         self.bar.setRange(0, 1)
         self.bar.setValue(1)
-        self.title.setText("Scan finished")
+        self.title.setText("Acquisition and scan finished" if self._live else "Scan finished")
         self.status.setText("Done")
 
     def failed(self, message: str, details: str) -> None:
@@ -227,12 +260,20 @@ class ScanPage(QWidget):
             active.set_state("failed")
         self.bar.setRange(0, 1)
         self.bar.setValue(0)
-        self.title.setText("The scan failed")
-        self.status.setText("Nothing was written for this scan.")
+        self.title.setText("The acquisition failed" if self._live and self._acquired == 0 else "The scan failed")
+        self.status.setText(self._left_behind())
         self.error.setText(message)
         self.error.show()
         self._append(details)
         self.back_btn.show()
+
+    def _left_behind(self) -> str:
+        if self._live and not self._acquired:
+            return "Nothing was copied."
+        if self._live:
+            return ("Files already copied are in the output folder, listed in acquisition.log; no report was "
+                    "written.")
+        return "Nothing was written for this scan."
 
     def cancelled(self) -> None:
         self._stop(False)
@@ -241,8 +282,8 @@ class ScanPage(QWidget):
         for step in self.steps.values():
             if step.state == "active":
                 step.set_state("pending")
-        self.title.setText("Scan cancelled")
-        self.status.setText("Nothing was written for this scan.")
+        self.title.setText("Acquisition cancelled" if self._live else "Scan cancelled")
+        self.status.setText(self._left_behind())
         self._append("scan cancelled")
         self.back_btn.show()
 

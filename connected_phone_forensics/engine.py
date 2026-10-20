@@ -35,6 +35,7 @@ class ScanResult:
     tool_version: str = __version__
     case: dict[str, str] = field(default_factory=dict)
     assertions: list[list[str]] = field(default_factory=list)
+    acquisition: dict | None = None  # live acquisition summary (see connected_phone_forensics.live)
 
 
 def parse_assertion(text: str) -> list[Identifier]:

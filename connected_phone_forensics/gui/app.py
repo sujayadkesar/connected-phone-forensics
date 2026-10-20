@@ -39,10 +39,12 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName("ConnectedPhoneForensics")
     app.setStyle("Fusion")
 
-    from . import theme
+    from . import portable, theme, widgets
     from .icons import app_icon
     from .widgets import THEME
     from .window import MainWindow
+
+    widgets.NATIVE_DIALOGS = not portable.is_portable()
 
     THEME.fonts = theme.load_fonts()
     app.setFont(THEME.fonts.ui)
@@ -54,7 +56,9 @@ def main(argv: list[str] | None = None) -> int:
     window.apply_theme(saved if saved in ("light", "dark") else ("dark" if theme.system_prefers_dark() else "light"))
     window.show()
     args = app.arguments()[1:]
-    if args:  # a results folder given on the command line opens straight away
+    if args and args[0] == "--live":  # restarted as administrator for a live acquisition
+        window.pages["new"].set_source("live")
+    elif args:  # a results folder given on the command line opens straight away
         window.open_results(Path(args[0]))
     return app.exec()
 

@@ -207,7 +207,11 @@ def display_value(kind: str, value: str) -> str:
     if kind in ("bt_mac", "wifi_mac") and re.fullmatch(r"([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}", v):
         return v.upper()
     if kind == "app_device_id":
-        return v.partition(":")[2].strip("{}") or v
+        namespace, _, rest = v.partition(":")
+        if namespace == "wifi_ap_mac" and re.fullmatch(r"[0-9a-fA-F]{12}", rest.replace(":", "")):
+            hexa = rest.replace(":", "").upper()
+            return ":".join(hexa[i:i + 2] for i in range(0, 12, 2))
+        return rest.strip("{}") or v
     return v
 
 

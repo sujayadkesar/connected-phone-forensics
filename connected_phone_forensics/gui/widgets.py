@@ -222,6 +222,23 @@ def clear_layout(lay: QLayout) -> None:
             clear_layout(item.layout())
 
 
+NATIVE_DIALOGS = True  # False in portable mode (see portable.py)
+
+
+def choose_folder(parent: QWidget, title: str, start: str) -> str:
+    """A folder picker: Windows' own dialog normally, Qt's in portable mode."""
+    options = QFileDialog.Option.ShowDirsOnly
+    if not NATIVE_DIALOGS:
+        options |= QFileDialog.Option.DontUseNativeDialog
+    return QFileDialog.getExistingDirectory(parent, title, start, options)
+
+
+def choose_save_file(parent: QWidget, title: str, start: str, filters: str) -> str:
+    """A save-as picker, following the same native/portable rule as :func:`choose_folder`."""
+    options = QFileDialog.Option(0) if NATIVE_DIALOGS else QFileDialog.Option.DontUseNativeDialog
+    return QFileDialog.getSaveFileName(parent, title, start, filters, "", options)[0]
+
+
 def copy_text(text: str, toast_from: QWidget | None = None, what: str = "Copied") -> None:
     QGuiApplication.clipboard().setText(text)
     if toast_from is not None:
@@ -258,8 +275,9 @@ class Card(QFrame):
         self.header = QHBoxLayout()
         self.header.setSpacing(8)
         self.title_label = label(title, "H3") if title else None
+        self.subtitle_label = label(subtitle, "Small", wrap=True) if subtitle else None
         if title or subtitle:
-            titles = vbox(self.title_label, label(subtitle, "Small", wrap=True) if subtitle else None, spacing=2)
+            titles = vbox(self.title_label, self.subtitle_label, spacing=2)
             self.header.addLayout(titles, 1)
             outer.addLayout(self.header)
         self.body = QVBoxLayout()
@@ -795,7 +813,7 @@ class PathField(QWidget):
 
     def _browse(self) -> None:
         start = self.edit.text() or str(Path.home())
-        chosen = QFileDialog.getExistingDirectory(self, self._title, start)
+        chosen = choose_folder(self, self._title, start)
         if chosen:
             self.edit.setText(str(Path(chosen)))
 
@@ -851,8 +869,7 @@ class DropZone(QFrame):
         self.path: Path | None = None
 
     def _browse(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose the evidence folder",
-                                                  str(self.path or Path.home()))
+        chosen = choose_folder(self, "Choose the evidence folder", str(self.path or Path.home()))
         if chosen:
             self.set_path(Path(chosen))
 

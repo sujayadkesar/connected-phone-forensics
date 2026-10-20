@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QFileDialog, QPlainTextEdit, QSplitter, QWidget
+from PySide6.QtWidgets import QComboBox, QPlainTextEdit, QSplitter, QWidget
 
 from ...output.structured import csv_safe
 from .. import jobs
@@ -24,6 +24,7 @@ from ..widgets import (
     breakable,
     button,
     channel_color_fn,
+    choose_save_file,
     clear_layout,
     copy_text,
     hbox,
@@ -270,7 +271,7 @@ class TimelinePage(QWidget):
         if not self.case:
             return
         start = str((self.case.outdir or Path.home()) / "timeline-filtered.csv")
-        path, _ = QFileDialog.getSaveFileName(self, "Export the records shown", start, "CSV files (*.csv)")
+        path = choose_save_file(self, "Export the records shown", start, "CSV files (*.csv)")
         if not path:
             return
         rows = self.model.visible_rows()

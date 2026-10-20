@@ -93,6 +93,8 @@ class ScanParams:
     workers: int | None = None
     workdir: Path | None = None
     demo: bool = False  # build the synthetic demo evidence into ``evidence`` first
+    live: bool = False  # acquire this computer into ``output`` (as administrator), then scan the copy
+    allow_same_drive: bool = False  # live: allow the output on the drive being examined
 
 
 def scan_job(params: ScanParams) -> Callable[[Job], Any]:
@@ -100,6 +102,16 @@ def scan_job(params: ScanParams) -> Callable[[Job], Any]:
         from ..engine import scan
         from ..output import write_all
         from .casedata import CaseData
+
+        if params.live:
+            from ..live import run_live
+
+            result, _acq = run_live(
+                params.output, case=params.case, workers=params.workers, plugin_ids=params.plugin_ids,
+                allow_same_drive=params.allow_same_drive, export_files=params.export_files,
+                progress=lambda msg: job.progress.emit({"type": "log", "message": msg}),
+                on_event=job.progress.emit, cancel=job.cancel_event)
+            return CaseData.from_result(result, params.output / "report")
 
         evidence = params.evidence
         if params.demo:
@@ -115,8 +127,9 @@ def scan_job(params: ScanParams) -> Callable[[Job], Any]:
         )
         job.progress.emit({"type": "writing"})
         params.output.mkdir(parents=True, exist_ok=True)
-        write_all(result, params.output)
-        return CaseData.from_result(result, params.output)
+        case = CaseData.from_result(result, params.output)
+        write_all(result, params.output, case=case)
+        return case
 
     return work
 

@@ -146,3 +146,57 @@ def test_background_results_survive_garbage_collection(app, window, tmp_path, mo
     window.open_results(tmp_path / "out")
     assert _wait(app, lambda: gc.collect() is not None and window.case is not None, 60)
     assert window.case.outdir == tmp_path / "out"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="live acquisition is Windows-only")
+def test_live_acquisition_through_the_app(app, window, tmp_path, monkeypatch):
+    # The app's live mode end to end, with the demo laptop standing in for this computer.
+    import connected_phone_forensics.live as live
+    from connected_phone_forensics.demo import build_demo_evidence
+    from connected_phone_forensics.live.acquire import Acquirer
+    from tests.test_live import FakeComputer
+
+    root = build_demo_evidence(tmp_path / "demo") / "ALEX-LAPTOP" / "C"
+    usb = tmp_path / "usb"
+    usb.mkdir()
+    machine = {"computer": "ALEX-LAPTOP", "windows": "Windows 11 Pro", "user": "alex", "admin": False,
+               "system_drive": "Z:\\", "profiles": ["Z:\\Users\\alex"]}
+    monkeypatch.setattr(live, "machine", lambda: machine)
+    monkeypatch.setattr(live, "system_drive", lambda: "Z:\\")
+    monkeypatch.setattr(live, "is_admin", lambda: True)
+    monkeypatch.setattr(live, "output_drives", lambda: [
+        {"root": str(usb), "kind": "removable", "label": "EVIDENCE", "filesystem": "exFAT", "serial": "1234",
+         "free_bytes": 32 * 1024**3, "program_drive": False}])
+    monkeypatch.setattr(live, "check_destination", lambda *a, **k: {})
+    monkeypatch.setattr(live, "acquire_live", lambda dest, **k: Acquirer(
+        FakeComputer(root), dest, computer="ALEX-LAPTOP", progress=k.get("progress"), cancel=k.get("cancel")).run())
+
+    home = window.pages["new"]
+    home.set_source("live")
+    assert not home.live_panel.isHidden() and home.drop.isHidden()
+    assert home.problem.text() == "Restart as administrator to acquire this computer."
+    assert not home.live_panel.restart_btn.isHidden()
+    machine["admin"] = True
+    home._machine = None
+    home.set_source("live")
+    assert home.start_btn.isEnabled(), home.problem.text()
+    assert "EVIDENCE" in home.live_output.drive.currentText()
+    out = home.live_output.path()
+    assert out.parent == usb / "CPF cases" and out.name.startswith("ALEX-LAPTOP ")
+
+    home._start()
+    assert _wait(app, lambda: window.case is not None), window.pages["scan"].error.text()
+    case = window.case
+    assert case.outdir == out / "report" and (out / "acquisition.json").is_file()
+    assert case.phones and int(window.pages["scan"].c_acquired.value.text().replace(",", "")) > 20
+    assert not (out / "_work").exists()  # temporary copies stayed in the output folder, then went
+
+
+def test_running_system_drive_is_recognised(tmp_path):
+    from pathlib import Path
+
+    from connected_phone_forensics.live import is_system_drive_root
+
+    if os.name == "nt":
+        assert is_system_drive_root(Path(os.environ.get("SYSTEMDRIVE", "C:") + "\\"))
+    assert not is_system_drive_root(tmp_path)

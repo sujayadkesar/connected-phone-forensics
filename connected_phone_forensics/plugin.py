@@ -59,6 +59,9 @@ class Plugin:
     channel: ClassVar[Channel] = Channel.OTHER
     description: ClassVar[str] = ""
     paths: ClassVar[list[str]] = []         # glob patterns relative to the system root
+    # Further files a collection must hold for this parser (live acquisition and collection targets
+    # copy them too), e.g. a folder whose sub-folder names the parser reads.
+    acquire: ClassVar[list[str]] = []
     references: ClassVar[list[str]] = []
     validation: ClassVar[Validation] = Validation.SYNTHETIC
     version: ClassVar[str] = "1"

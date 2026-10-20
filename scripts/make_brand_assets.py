@@ -234,10 +234,28 @@ def how_it_works(path: Path) -> None:
         raise OSError(f"could not write {path}")
 
 
+def write_ui_svgs() -> None:
+    """The style sheet's small SVGs (check marks, arrows) for both palettes, shipped with the
+    package so the app writes nothing to the temp folder."""
+    from connected_phone_forensics.gui import theme
+
+    for p in (theme.DARK, theme.LIGHT):
+        d = theme.UI_ASSETS / p.name
+        d.mkdir(parents=True, exist_ok=True)
+        for name, svg in theme.ui_svgs(p).items():
+            (d / name).write_text(svg, encoding="utf-8", newline="\n")
+
+
 def main() -> int:
+    if "--ui" in sys.argv[1:]:
+        write_ui_svgs()
+        print("wrote connected_phone_forensics/assets/ui/{dark,light}/*.svg")
+        return 0
     # Windows' own platform plugin: the offscreen one falls back to an odd font for text.
     os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "offscreen")
     from PySide6.QtWidgets import QApplication
+
+    write_ui_svgs()
 
     _app = QApplication(sys.argv[:1])
     ASSETS.mkdir(parents=True, exist_ok=True)

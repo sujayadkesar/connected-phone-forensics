@@ -36,7 +36,7 @@ def _with_sidecars(mask: str | None) -> str | None:
 def _all_paths() -> dict[str, list[tuple[str, str]]]:
     by_os: dict[str, list[tuple[str, str]]] = defaultdict(list)
     for cls in load_plugins().values():
-        for p in cls.paths:
+        for p in [*cls.paths, *cls.acquire]:
             by_os[cls.os].append((cls.id, p))
     return by_os
 

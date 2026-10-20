@@ -108,11 +108,12 @@ def load_fonts() -> Fonts:
     return Fonts(ui, mono)
 
 
-def _asset_dir(p: Palette) -> Path:
+UI_ASSETS = Path(__file__).resolve().parents[1] / "assets" / "ui"
+
+
+def ui_svgs(p: Palette) -> dict[str, str]:
     """Small theme-coloured SVGs the style sheet refers to (combo arrows, check marks)."""
-    d = Path(tempfile.gettempdir()) / "cpf-gui-assets" / p.name
-    d.mkdir(parents=True, exist_ok=True)
-    svgs = {
+    return {
         "chevron-down.svg": f'<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" '
                             f'fill="none" stroke="{p.muted}" stroke-width="2.5" stroke-linecap="round" '
                             f'stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
@@ -126,6 +127,17 @@ def _asset_dir(p: Palette) -> Path:
                          f'fill="none" stroke="{p.muted}" stroke-width="3" stroke-linecap="round" '
                          f'stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
     }
+
+
+def _asset_dir(p: Palette) -> Path:
+    """Where those SVGs are: shipped with the package (nothing is written), or, if a palette
+    changed without regenerating them (``python scripts/make_brand_assets.py``), the temp folder."""
+    svgs = ui_svgs(p)
+    shipped = UI_ASSETS / p.name
+    if all((shipped / n).is_file() and (shipped / n).read_text(encoding="utf-8") == s for n, s in svgs.items()):
+        return shipped
+    d = Path(tempfile.gettempdir()) / "cpf-gui-assets" / p.name
+    d.mkdir(parents=True, exist_ok=True)
     for name, svg in svgs.items():
         f = d / name
         if not f.exists() or f.read_text(encoding="utf-8") != svg:
@@ -177,6 +189,12 @@ QPushButton#Nav:disabled {{ color: {p.faint}; }}
 #DropZone {{ background: {mix(p.surface, p.accent, 0.03)}; border: 2px dashed {p.faint}; border-radius: 12px; }}
 #DropZone[active="true"] {{ border-color: {p.accent}; background: {mix(p.surface, p.accent, 0.10)}; }}
 #DropZone[filled="true"] {{ border-style: solid; border-color: {p.border}; background: {p.surface}; }}
+#LivePanel {{ background: {mix(p.surface, p.accent, 0.04)}; border: 1px solid {p.border}; border-radius: 12px; }}
+#LiveStatus {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 10px; }}
+#LiveStatus[tone="ok"] {{ background: {mix(p.surface, p.ok, 0.08)}; border-color: {mix(p.border, p.ok, 0.45)}; }}
+#LiveStatus[tone="warn"] {{ background: {mix(p.surface, p.warn, 0.08)}; border-color: {mix(p.border, p.warn, 0.5)}; }}
+#Notice {{ background: {mix(p.surface, p.warn, 0.07)}; border: 1px solid {mix(p.border, p.warn, 0.45)};
+    border-radius: 10px; }}
 #Chip {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 10px; }}
 #ChipText {{ font-size: 8.5pt; font-weight: 500; color: {p.text}; }}
 #IconBadge {{ border-radius: 10px; }}

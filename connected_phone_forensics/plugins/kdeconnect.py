@@ -221,6 +221,7 @@ class WindowsKdeConnect(Plugin):
     channel = Channel.COMPANION_APP
     description = __doc__ or ""
     paths = ["Users/*/AppData/Local/kdeconnect/trusted_devices", "Users/*/AppData/Local/kdeconnect/config"]
+    acquire = ["Users/*/AppData/Local/kdeconnect/**"]  # the per-device folders list enabled plugins
     references = _REFS
     validation = Validation.SYNTHETIC
 

@@ -9,7 +9,6 @@ from PySide6.QtCore import QSettings, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -21,9 +20,9 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from . import jobs, theme
+from . import jobs, portable, theme
 from .casedata import REQUIRED_FILES, CaseData
-from .widgets import THEME, Toast, button, hbox, label, tool_button, vbox
+from .widgets import THEME, Toast, button, choose_folder, hbox, label, tool_button, vbox
 
 ORG, APP = "ConnectedPhoneForensics", "Connected Phone Forensics"
 
@@ -97,7 +96,11 @@ class Sidebar(QFrame):
         lay.addWidget(self.case_box)
         lay.addSpacing(10)
         self.theme_btn = tool_button("ph.moon", "Switch between light and dark", window.toggle_theme, 17)
-        lay.addLayout(hbox(label(f"v{__version__}", "Faint"), "stretch", self.theme_btn))
+        version = label(f"v{__version__}" + (" · portable" if portable.is_portable() else ""), "Faint")
+        if portable.is_portable():
+            version.setToolTip("Portable mode: settings are kept next to the program, not in this computer's "
+                               "registry")
+        lay.addLayout(hbox(version, "stretch", self.theme_btn))
         self.setLayout(lay)
 
     def _render_lockup(self) -> None:
@@ -136,7 +139,7 @@ class MainWindow(QMainWindow):
         from .pages.scan import ScanPage
         from .pages.timeline import TimelinePage
 
-        self.settings = settings or QSettings(ORG, "CPF")
+        self.settings = settings or portable.settings(ORG, "CPF")
         self.case: CaseData | None = None
         self.scan_job: jobs.Job | None = None
         self.setWindowTitle(APP)
@@ -256,7 +259,7 @@ class MainWindow(QMainWindow):
 
     def open_results_dialog(self) -> None:
         start = self.settings.value("last_output_parent", str(Path.home()))
-        chosen = QFileDialog.getExistingDirectory(self, "Open a scan output folder", start)
+        chosen = choose_folder(self, "Open a scan output folder", start)
         if chosen:
             self.open_results(Path(chosen))
 
