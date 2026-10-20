@@ -107,7 +107,7 @@ class LinuxBluetooth(Plugin):
             artifact=self.id, event="bt_pairing_record" if paired else "bt_cached_device",
             message=f"Bluetooth {what} {name or device} {'paired' if paired else 'seen (not paired)'} "
                     f"with adapter {adapter}",
-            channel=Channel.BLUETOOTH, timestamp=from_unix(path.stat().st_mtime),
+            channel=Channel.BLUETOOTH, timestamp=from_unix(path.stat().st_mtime_ns, "ns"),
             timestamp_desc="BlueZ record file modified (filesystem time)", time_source="filesystem",
             provenance=ctx.prov(path, "file"),
             device_ids=[ident(IdKind.BT_MAC, device), ident(IdKind.DEVICE_NAME, name)],

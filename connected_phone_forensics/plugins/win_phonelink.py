@@ -360,7 +360,7 @@ class WindowsPhoneLink(Plugin):
             inventory.append(entry)
             if name not in _HANDLED:
                 self._unparsed_db(ctx, path, _UNPARSED.get(name))
-        mtime = from_unix(prof.folder.stat().st_mtime)
+        mtime = from_unix(prof.folder.stat().st_mtime_ns, "ns")
         names = prof.names + ([prof.meta.describe()] if prof.meta else [])
         ctx.emit(Observation(
             artifact=self.id, event="phonelink_profile",

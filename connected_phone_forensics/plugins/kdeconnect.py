@@ -189,7 +189,7 @@ def _parse(ctx: Context, base_dirs) -> None:
                     artifact=ctx.plugin.id, event="kdeconnect_paired",
                     message=f"{label} is paired (trusted) with this computer",
                     channel=Channel.COMPANION_APP,
-                    timestamp=from_unix(dev_dir.stat().st_mtime) if dev_dir else None,
+                    timestamp=from_unix(dev_dir.stat().st_mtime_ns, "ns") if dev_dir else None,
                     timestamp_desc="Device config folder modified (filesystem time)" if dev_dir else "",
                     time_source="filesystem",
                     provenance=ctx.prov(trusted, f"ini:[{dev_id}]"),

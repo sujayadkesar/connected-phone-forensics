@@ -52,7 +52,7 @@ class MacIPhoneMirroring(Plugin):
                         artifact=self.id, event="iphone_mirroring_configured",
                         message="iPhone Mirroring is set up on this Mac"
                                 + (f" (paired device {paired})" if paired else ""),
-                        channel=Channel.CONTINUITY, timestamp=from_unix(path.stat().st_mtime),
+                        channel=Channel.CONTINUITY, timestamp=from_unix(path.stat().st_mtime_ns, "ns"),
                         timestamp_desc="Preferences file modified (filesystem time)", time_source="filesystem",
                         provenance=ctx.prov(path, "plist:$.onenessPairedDeviceID" if paired else "plist"),
                         device_ids=ids, phone_os="ios", device_class="phone", user=user,
@@ -77,7 +77,7 @@ class MacIPhoneMirroring(Plugin):
                              "name": pl.get("CFBundleDisplayName") or pl.get("CFBundleName") or pl.get("itemName"),
                              "version": pl.get("CFBundleShortVersionString") or pl.get("bundleShortVersionString"),
                              "platforms": pl.get("CFBundleSupportedPlatforms"), "path": ctx.fs.rel(info),
-                             "modified": from_unix(info.stat().st_mtime).isoformat()})
+                             "modified": from_unix(info.stat().st_mtime_ns, "ns").isoformat()})
             ios_apps = [a for a in apps if not a["platforms"] or "iPhoneOS" in (a["platforms"] or [])]
             if not ios_apps or anchor is None:
                 continue

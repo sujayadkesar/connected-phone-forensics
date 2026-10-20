@@ -68,6 +68,12 @@ All notable changes are listed here. The format follows
   widgets the pages had replaced stopped the change part-way. Widgets now unregister themselves
   when they are deleted, and the style sheet is applied first.
 - Long device names wrap in the device list instead of being cut off.
+- On Linux with Python 3.10 or 3.11, the app and the PDF summary could abort after enough drawing
+  ("deallocating None"): PySide6 6.12.0's Linux builds drop a reference in every call that sets a
+  pen, brush or font. That combination now installs PySide6 6.11, and a test watches for the leak.
+- Times read from files (pair records, KDE Connect and Phone Link folders, BlueZ, iPhone
+  Mirroring) are converted from exact nanoseconds, so a copy of the evidence gives the same
+  microsecond as the original.
 
 ## [0.2.0] - 2026-10-20
 

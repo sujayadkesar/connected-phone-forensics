@@ -4,6 +4,7 @@ Skipped when PySide6 or qtawesome cannot be imported.
 """
 
 import os
+import sys
 import time
 
 import pytest
@@ -373,3 +374,21 @@ def test_theme_switch_survives_widgets_the_pages_threw_away(app, window, tmp_pat
         listener()
     window.apply_theme("dark")
     assert theme.DARK.bg in app.styleSheet()
+
+
+@pytest.mark.skipif(sys.version_info >= (3, 12), reason="None is immortal from Python 3.12")
+def test_painting_keeps_its_references_to_none(app):
+    # PySide6 6.12.0's Linux wheels dropped a reference to None in every QPainter.setPen/setBrush/
+    # setFont, so Python before 3.12 aborted ("deallocating None") after enough drawing (see the
+    # PySide6 requirement in pyproject.toml).
+    from PySide6.QtGui import QColor, QFont, QImage, QPainter
+
+    img = QImage(8, 8, QImage.Format.Format_ARGB32)
+    p = QPainter(img)
+    before = sys.getrefcount(None)
+    for _ in range(500):
+        p.setPen(QColor("#102030"))
+        p.setBrush(QColor("#405060"))
+        p.setFont(QFont())
+    p.end()
+    assert sys.getrefcount(None) >= before - 50, "this PySide6 build loses references to None"

@@ -90,7 +90,7 @@ def _parse_pair_records(ctx: Context, files: list[Path]) -> None:
                     device_ids=ids, data=data, phone_os="ios",
                 ))
                 emitted += 1
-            mtime = from_unix(path.stat().st_mtime)
+            mtime = from_unix(path.stat().st_mtime_ns, "ns")
             ctx.emit(Observation(
                 artifact=ctx.plugin.id, event="pair_record_modified",
                 message=f"{label} pair record last written"
