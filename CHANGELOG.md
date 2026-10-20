@@ -6,6 +6,14 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-20
+
+### Fixed
+
+- On the Devices page, a hotspot network's Connections table cut off its *First joined* and
+  *Last joined* times (0.3.1 made those columns narrower). The time and access point columns are
+  now sized from the font, so a full timestamp and BSSID always fit.
+
 ## [0.3.1] - 2026-10-20
 
 ### Changed
@@ -293,7 +301,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.2
 [0.3.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.1
 [0.3.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.0
 [0.2.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.2.0

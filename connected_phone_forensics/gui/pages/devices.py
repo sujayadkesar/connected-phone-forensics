@@ -438,14 +438,21 @@ class DevicesPage(QWidget):
 
         sessions = Card("Connections", "One row per network the computer saved for this hotspot, with its "
                                        "access point address and when the computer joined it.")
+        from PySide6.QtGui import QFontMetrics
+
+        from ..widgets import mono_font
+
+        fm = QFontMetrics(mono_font())  # sized from the font: never cut a time short
+        mac_w = fm.horizontalAdvance("AA:BB:CC:DD:EE:FF") + 28
+        time_w = fm.horizontalAdvance("2025-10-11 19:31:00") + 28
         model = RecordModel([
             Column("Network name", lambda s: s["name"], 180, tooltip=True,
                    icon=lambda s: ("ph.wifi-high", "muted") if s["link"] == "Wi-Fi" else ("mdi6.usb-port", "warn"),
                    tip=lambda s: f"Joined by {s['link']}"),
-            Column("Access point (BSSID)", lambda s: s["bssid"] or "—", 160, mono=True, tip=lambda s: s["maker"]),
-            Column("First joined (UTC)", lambda s: fmt_time(s["first"]), 158, mono=True,
+            Column("Access point (BSSID)", lambda s: s["bssid"] or "—", mac_w, mono=True, tip=lambda s: s["maker"]),
+            Column("First joined (UTC)", lambda s: fmt_time(s["first"]), time_w, mono=True,
                    sort_key=lambda s: s["first"] or ""),
-            Column("Last joined (UTC)", lambda s: fmt_time(s["last"]), 158, mono=True,
+            Column("Last joined (UTC)", lambda s: fmt_time(s["last"]), time_w, mono=True,
                    sort_key=lambda s: s["last"] or ""),
             Column("Windows profile · addresses", lambda s: " · ".join(x for x in (s["profiles"], s["dhcp"]) if x),
                    None, tooltip=True),
