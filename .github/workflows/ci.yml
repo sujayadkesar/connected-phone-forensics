@@ -7,6 +7,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       QT_QPA_PLATFORM: offscreen
+      PYTHONUNBUFFERED: "1"  # a crash must not take the end of the log with it
     strategy:
       fail-fast: false
       matrix:
@@ -30,13 +31,29 @@ jobs:
         run: |
           set -o pipefail
           python -X faulthandler -m pytest -rfE 2>&1 | tee pytest.log
-      - name: Show the end of a failed test run
-        # A crash (for example in Qt) leaves no per-test annotation; this puts the last lines of
-        # the run where everyone can read them.
+      - name: Summarise a failed test run
+        # Job logs need a sign-in; annotations do not. Put the failing tests, their assertion
+        # messages, any crash report and the last lines where everyone can read them.
         if: failure()
         shell: bash
         run: |
-          tail -c 5000 pytest.log | python -c "import sys; t = sys.stdin.read().replace('%', '%25').replace('\r', '').replace('\n', '%0A'); print('::error title=Last lines of the test run::' + t)"
+          python - <<'EOF'
+          import re
+          lines = open("pytest.log", encoding="utf-8", errors="replace").read().splitlines()
+          def emit(title, body):
+              body = body[-6000:].replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+              print(f"::error title={title}::{body}")
+          failed = [ln for ln in lines if re.match(r"(FAILED|ERROR) ", ln)]
+          if failed:
+              emit("Failed tests", "\n".join(failed[:40]))
+          messages = [ln for ln in lines if ln.startswith("E ")]
+          if messages:
+              emit("Assertion messages", "\n".join(messages[:80]))
+          crash = next((n for n, ln in enumerate(lines) if "Fatal Python error" in ln or "fatal exception" in ln), None)
+          if crash is not None:
+              emit("Crash", "\n".join(lines[crash:crash + 60]))
+          emit("Last lines of the test run", "\n".join(lines[-40:]))
+          EOF
       - name: CLI smoke test
         run: |
           cpf --version

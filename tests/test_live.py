@@ -126,7 +126,11 @@ def test_scanning_the_acquired_copy_gives_the_same_records(computer, tmp_path):
                       for o in result.observations)
 
     assert any(o.artifact == "win_kdeconnect" and o.data.get("plugin_folders") for o in copy.observations)
-    assert records(copy) == records(original)
+    a, b = records(copy), records(original)
+    only_copy, only_original = sorted(set(a) - set(b)), sorted(set(b) - set(a))
+    assert a == b, (f"{len(only_copy)} record(s) only in the copy, {len(only_original)} only in the original:\n"
+                    + "\n".join(f"copy:     {r}" for r in only_copy[:6])
+                    + "\n" + "\n".join(f"original: {r}" for r in only_original[:6]))
 
 
 def test_cancelled_acquisition_stops(computer, tmp_path):
