@@ -62,6 +62,9 @@ version = { attr = "connected_phone_forensics.__version__" }
 [tool.setuptools.packages.find]
 include = ["connected_phone_forensics*"]
 
+[tool.setuptools.package-data]
+connected_phone_forensics = ["assets/*", "assets/fonts/*", "data/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

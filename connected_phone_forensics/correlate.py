@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from .decode import apple_model, decode, device_family, display_value
 from .model import Identifier, IdKind, Observation, Strength, phone_key
 from .timeutil import iso
 
@@ -96,10 +97,12 @@ class Device:
             "first_seen": iso(self.first_seen),
             "last_seen": iso(self.last_seen),
             "identifiers": [
-                {"kind": i.kind.value, "value": i.value, "strength": i.strength.value,
+                {"kind": i.kind.value, "value": i.value, "display": display_value(i.kind, i.value),
+                 "strength": i.strength.value,
                  "as_recorded": sorted(self.raw_values.get(i, set()) - {i.value}),
-                 "sources": sorted(src)} for i, src in idents
+                 "sources": sorted(src), "decoded": _decoded_dict(i, self.phone_os)} for i, src in idents
             ],
+            "primary_identifier": _primary_dict(self),
             "channels": [
                 {"channel": c.channel, "first_seen": iso(c.first_seen), "last_seen": iso(c.last_seen),
                  "observations": c.observations, "artifacts": sorted(c.artifacts)}
@@ -114,6 +117,21 @@ class Device:
 
 
 _STRENGTH_ORDER = {Strength.STRONG: 0, Strength.LINK: 1, Strength.WEAK: 2}
+
+
+def _decoded_dict(i: Identifier, os: str | None) -> dict[str, Any]:
+    d = decode(i.kind, i.value, os)
+    return {"label": d.kind_label, "summary": d.summary, "fields": [list(f) for f in d.fields],
+            "valid": d.valid, "note": d.note}
+
+
+def _primary_dict(dev: Device) -> dict[str, Any] | None:
+    i = primary_identifier(dev)
+    if i is None:
+        return None
+    d = decode(i.kind, i.value, dev.phone_os)
+    return {"kind": i.kind.value, "value": i.value, "display": display_value(i.kind, i.value),
+            "label": d.kind_label, "summary": d.summary}
 
 
 @dataclass
@@ -189,11 +207,16 @@ def _infer_class(dev: Device, votes: Counter) -> str | None:
     return None
 
 
+# Which identifier names a device best when it has no name: hardware ids first, app ids last.
 _LABEL_ID_ORDER = [IdKind.UDID, IdKind.SERIAL, IdKind.IMEI, IdKind.MEID, IdKind.USB_SERIAL, IdKind.WIFI_MAC,
                    IdKind.BT_MAC, IdKind.APP_DEVICE_ID]
-_ID_NAMES = {IdKind.UDID: "UDID", IdKind.SERIAL: "serial", IdKind.IMEI: "IMEI", IdKind.MEID: "MEID",
-             IdKind.USB_SERIAL: "USB serial", IdKind.WIFI_MAC: "Wi-Fi", IdKind.BT_MAC: "Bluetooth"}
-_APP_NAMES = {"phonelink": "Phone Link", "kdeconnect": "KDE Connect", "win_container": "container"}
+
+
+def primary_identifier(dev: Device) -> Identifier | None:
+    """The strong identifier that best names the device (UDID before serial before MAC...)."""
+    strong = sorted((i for i in dev.identifiers if i.strength == Strength.STRONG),
+                    key=lambda i: (_LABEL_ID_ORDER.index(i.kind) if i.kind in _LABEL_ID_ORDER else 99, str(i)))
+    return strong[0] if strong else None
 
 
 def _noun(dev: Device) -> str:
@@ -208,26 +231,24 @@ def _noun(dev: Device) -> str:
 
 
 def _label(dev: Device, names: Counter) -> str:
-    """A device's name: the name it reports, else its model, number, or kind plus a short identifier."""
+    """A device's name: the name it reports, else its model or number, else what its identifier tells
+    plus the identifier in full ("iPhone 16 family · UDID 00008140-0001541E3E46801C")."""
     if names:
         return names.most_common(1)[0][0]
     models = sorted(i.value for i in dev.identifiers if i.kind == IdKind.MODEL)
     if models:
-        return models[0]
+        marketing = apple_model(models[0])
+        return f"{marketing} ({models[0]})" if marketing else models[0]
     numbers = sorted(i.value for i in dev.identifiers if i.kind == IdKind.PHONE_NUMBER)
     if numbers:
         return f"Phone line {numbers[0]}"
-    strong = sorted((i for i in dev.identifiers if i.strength == Strength.STRONG),
-                    key=lambda i: (_LABEL_ID_ORDER.index(i.kind) if i.kind in _LABEL_ID_ORDER else 99, str(i)))
-    if strong:
-        i = strong[0]
-        if i.kind == IdKind.APP_DEVICE_ID:
-            ns, _, value = i.value.partition(":")
-            return f"{_noun(dev)} ({_APP_NAMES.get(ns, ns)} {value.strip('{}')[:8]})"
-        short = i.value if len(i.value) <= 12 else "…" + i.value[-8:]
-        return f"{_noun(dev)} ({_ID_NAMES.get(i.kind, i.kind.value)} {short})"
+    i = primary_identifier(dev)
+    if i is not None:
+        decoded = decode(i.kind, i.value, dev.phone_os)
+        noun = device_family(i.kind.value, i.value) or _noun(dev)
+        return f"{noun} · {decoded.kind_label} {display_value(i.kind, i.value)}"
     accounts = sorted(i.value for i in dev.identifiers if i.kind == IdKind.ACCOUNT)
-    return f"Account {accounts[0]}" if accounts else "unknown device"
+    return f"Account {accounts[0]}" if accounts else "Unknown device"
 
 
 def build_graph(observations: list[Observation]) -> DeviceGraph:

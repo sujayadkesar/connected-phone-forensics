@@ -43,17 +43,24 @@ class Palette:
         return self.name == "dark"
 
 
+# Brand colours from the logo kit (docs/brand): phone blues, monitor blue, navy, signal yellow.
+BRAND_BLUE = "#2456DE"
+BRAND_BLUE_LIGHT = "#5C95FF"
+BRAND_SKY = "#7CCBFF"
+BRAND_NAVY = "#0B1630"
+BRAND_YELLOW = "#FFC23D"
+
 DARK = Palette(
-    "dark", bg="#0f1217", sidebar="#0b0e12", surface="#151a21", raised="#1c222b", border="#262d38",
-    divider="#1f252e", text="#e7eaf0", muted="#9ba4b4", faint="#5f6978", accent="#4f86f0",
-    accent_hover="#6b9af3", accent_text="#ffffff", accent_soft="#1d2e4d", ok="#3fb950",
-    warn="#fab219", bad="#f06464",
+    "dark", bg="#0a1120", sidebar="#070d19", surface="#101a2e", raised="#16223a", border="#22314f",
+    divider="#1a2742", text="#e9eef8", muted="#9dabc6", faint="#5e6f91", accent=BRAND_BLUE_LIGHT,
+    accent_hover="#7dabff", accent_text="#ffffff", accent_soft="#1a2f5c", ok="#3fb950",
+    warn=BRAND_YELLOW, bad="#f26b6b",
     series=("#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9"),
 )
 LIGHT = Palette(
-    "light", bg="#f4f6f9", sidebar="#eceff4", surface="#ffffff", raised="#f3f5f8", border="#dde2e9",
-    divider="#eef0f4", text="#1a1f27", muted="#596475", faint="#99a2b1", accent="#2f6bed",
-    accent_hover="#2559cc", accent_text="#ffffff", accent_soft="#dce7fd", ok="#1a8f3c",
+    "light", bg="#f3f6fb", sidebar="#e9eff9", surface="#ffffff", raised="#f3f6fb", border="#dae2ef",
+    divider="#ecf1f8", text="#0e1a33", muted="#4c5b79", faint="#93a0b8", accent=BRAND_BLUE,
+    accent_hover="#1b44c2", accent_text="#ffffff", accent_soft="#dee8ff", ok="#1a8f3c",
     warn="#b57800", bad="#d03b3b",
     series=("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6"),
 )
@@ -139,8 +146,6 @@ QToolTip {{ background: {p.surface}; color: {p.text}; border: 1px solid {p.borde
 
 /* sidebar */
 #Sidebar {{ background: {p.sidebar}; border-right: 1px solid {p.border}; }}
-#BrandName {{ font-weight: 600; font-size: 10.5pt; }}
-#BrandSub {{ color: {p.muted}; font-size: 8.5pt; }}
 #NavSection {{ color: {p.faint}; font-size: 7.75pt; font-weight: 700; padding: 14px 12px 4px 12px; }}
 QPushButton#Nav {{ text-align: left; padding: 8px 12px; border-radius: 8px; border: none; background: transparent;
     color: {p.muted}; font-weight: 500; }}

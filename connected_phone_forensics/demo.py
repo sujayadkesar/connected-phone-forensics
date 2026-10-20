@@ -59,7 +59,7 @@ def _backup(folder: Path, last: datetime, encrypted: bool) -> None:
         plistlib.dump({
             "Device Name": IPHONE_NAME, "Display Name": IPHONE_NAME,
             "Unique Identifier": IPHONE_UDID.replace("-", ""), "Target Identifier": IPHONE_UDID.replace("-", ""),
-            "Serial Number": "HG7XQ2LM9P", "IMEI": "353912110123456", "Phone Number": "+1 (415) 555-0142",
+            "Serial Number": "HG7XQ2LM9P", "IMEI": "353912110123451", "Phone Number": "+1 (415) 555-0142",
             "Product Type": "iPhone15,4", "Product Version": "18.1", "Build Version": "22B83",
             "Last Backup Date": naive, "iTunes Version": "12.13.4.4",
             "Installed Applications": ["net.whatsapp.WhatsApp", "ph.telegra.Telegraph", "org.whispersystems.signal"],

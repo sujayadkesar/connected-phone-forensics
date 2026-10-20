@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="cpfph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5C95FF"/><stop offset="1" stop-color="#2456DE"/></linearGradient>
+    <linearGradient id="cpfmo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7CCBFF"/><stop offset="1" stop-color="#4AA6F7"/></linearGradient>
+    <linearGradient id="cpfsc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C2E9FF"/><stop offset="1" stop-color="#93D3FF"/></linearGradient>
+    <clipPath id="cpfclip"><rect x="72" y="64" width="184" height="368" rx="46" /></clipPath>
+  </defs><g transform="translate(-8 8)">
+  <path d="M305 300 H335 L342 368 H298 Z" fill="#3F9BF0"/>
+  <rect x="266" y="362" width="108" height="24" rx="12" fill="#3F9BF0"/>
+  <rect x="184" y="116" width="272" height="200" rx="32" fill="url(#cpfmo)"/>
+  <rect x="72" y="64" width="184" height="368" rx="46" fill="url(#cpfph)"/>
+  <path d="M 216 116 H 256 H 256 V 316 H 216 A 32 32 0 0 1 184 284 V 148 A 32 32 0 0 1 216 116 Z" fill="#0B1630"/><circle cx="220.0" cy="216" r="22" fill="#FFC23D"/></g></svg>

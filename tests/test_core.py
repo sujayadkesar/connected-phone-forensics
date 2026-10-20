@@ -333,5 +333,12 @@ def test_devices_without_a_name_get_a_readable_label():
         obs(ident(IdKind.USB_SERIAL, "E28E9340"), phone_os="android", device_class="phone"),
         obs(ident(IdKind.APP_DEVICE_ID, "phonelink:f77b925a-6e5f-43e4-9baa-097c0b5d0711"), device_class="phone"),
     ])
+    # Full identifiers, never shortened, and what the identifier tells (the UDID's chip: iPhone 16).
     assert sorted(d.label for d in graph.devices) == [
-        "Android phone (USB serial E28E9340)", "Phone (Phone Link f77b925a)", "iPhone (UDID …3E46801C)"]
+        "Android phone · USB serial E28E9340",
+        "Phone · Phone Link device ID f77b925a-6e5f-43e4-9baa-097c0b5d0711",
+        "iPhone 16 family · UDID 00008140-0001541E3E46801C"]
+    udid_dev = next(d for d in graph.devices if d.label.startswith("iPhone"))
+    decoded = udid_dev.to_dict()["identifiers"][0]["decoded"]
+    assert decoded["summary"].startswith("Apple A18 / A18 Pro chip")
+    assert ["ECID", "0x0001541E3E46801C (exclusive chip ID, unique per device)"] in decoded["fields"]

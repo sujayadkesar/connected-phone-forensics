@@ -93,7 +93,8 @@ def test_knowledgec_sync_peer(tmp_path):
     result = scan(tmp_path, plugin_ids=["mac_knowledgec_peers"])
     obs = result.observations[0]
     assert obs.data["model"] == "iPhone15,2" and obs.data["streams"]["/app/inFocus"]["events"] == 3
-    assert obs.device_class == "phone" and result.graph.devices[0].label == "iPhone15,2"
+    # The Apple product type is decoded to its marketing name; the code itself stays visible.
+    assert obs.device_class == "phone" and result.graph.devices[0].label == "iPhone 14 Pro (iPhone15,2)"
 
 
 def test_iphone_mirroring_prefs_and_placeholders(tmp_path):

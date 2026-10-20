@@ -69,14 +69,11 @@ class Sidebar(QFrame):
         self.setObjectName("Sidebar")
         self.setFixedWidth(232)
         self.buttons: dict[str, NavButton] = {}
-        from .icons import app_icon
-
-        logo = QLabel()
-        logo.setFixedSize(34, 34)
-        self._logo = logo
-        logo.setPixmap(app_icon().pixmap(34, 34))
-        brand = hbox(logo, vbox(label("Connected Phone", "BrandName"), label("Forensics", "BrandSub"), spacing=0),
-                     "stretch", spacing=10)
+        self.lockup = QLabel()
+        self.lockup.setObjectName("Lockup")
+        self._render_lockup()
+        THEME.on_change(self._render_lockup)
+        brand = hbox(self.lockup, "stretch")
         lay = vbox(spacing=2, margins=(14, 18, 14, 14))
         lay.addLayout(brand)
         lay.addSpacing(14)
@@ -102,6 +99,12 @@ class Sidebar(QFrame):
         self.theme_btn = tool_button("ph.moon", "Switch between light and dark", window.toggle_theme, 17)
         lay.addLayout(hbox(label(f"v{__version__}", "Faint"), "stretch", self.theme_btn))
         self.setLayout(lay)
+
+    def _render_lockup(self) -> None:
+        from .icons import svg_pixmap
+
+        name = "lockup-two-line-dark.svg" if THEME.palette.dark else "lockup-two-line-light.svg"
+        self.lockup.setPixmap(svg_pixmap(name, 190, ratio=max(2.0, self.devicePixelRatioF())))
 
     def set_case(self, case: CaseData | None) -> None:
         self.case_box.setVisible(case is not None)

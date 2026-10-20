@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="cpfph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5C95FF"/><stop offset="1" stop-color="#2456DE"/></linearGradient>
+    <linearGradient id="cpfmo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7CCBFF"/><stop offset="1" stop-color="#4AA6F7"/></linearGradient>
+    <linearGradient id="cpfsc" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C2E9FF"/><stop offset="1" stop-color="#93D3FF"/></linearGradient>
+    <clipPath id="cpfclip"><rect x="72" y="64" width="184" height="368" rx="46" /></clipPath>
+  </defs><g transform="translate(-8 8)">
+  <path d="M305 300 H335 L342 368 H298 Z" fill="#3F9BF0"/>
+  <rect x="266" y="362" width="108" height="24" rx="12" fill="#3F9BF0"/>
+  <rect x="184" y="116" width="272" height="200" rx="32" fill="url(#cpfmo)"/>
+  <rect x="198" y="130" width="244" height="172" rx="18" fill="url(#cpfsc)"/><rect x="284" y="164" width="118" height="16" rx="8" fill="#FFFFFF" fill-opacity="0.9"/><rect x="284" y="208" width="92" height="16" rx="8" fill="#FFC23D" fill-opacity="1"/><rect x="284" y="252" width="108" height="16" rx="8" fill="#FFFFFF" fill-opacity="0.9"/>
+  <rect x="72" y="64" width="184" height="368" rx="46" fill="#1B44C2"/>
+  <rect x="84" y="76" width="160" height="344" rx="34" fill="url(#cpfph)"/>
+  <rect x="134" y="92" width="60" height="16" rx="8" fill="#0E1A33" fill-opacity="0.45"/>
+  <rect x="134" y="400" width="60" height="8" rx="4" fill="#FFFFFF" fill-opacity="0.6"/>
+  <g clip-path="url(#cpfclip)">
+    <rect x="184" y="116" width="272" height="200" rx="32" fill="#0B1630"/>
+    <rect x="198" y="130" width="244" height="172" rx="18" fill="#172C55"/>
+  </g><circle cx="227.0" cy="216" r="24" fill="none" stroke="#FFC23D" stroke-width="3.5" stroke-opacity="0.9"/><circle cx="227.0" cy="216" r="13" fill="#FFC23D"/></g></svg>
