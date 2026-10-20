@@ -148,3 +148,62 @@ def wallpaper(width: int = 216, height: int = 468) -> bytes:
         return bytes(out)
 
     return png(width, height, (row(y) for y in range(height)))
+
+
+@cache
+def avatar(top: tuple = (92, 149, 255), bottom: tuple = (36, 86, 222), size: int = 96) -> bytes:
+    """A contact picture: a head and shoulders on a coloured disc."""
+    c = size / 2
+
+    def row(y: int) -> bytes:
+        out = bytearray()
+        for x in range(size):
+            if math.hypot(x - c, y - c) > c:
+                col = (255, 255, 255)
+            else:
+                col = _mix(top, bottom, y / size)
+                head = math.hypot(x - c, y - size * 0.4) < size * 0.18
+                body = ((x - c) / (size * 0.32)) ** 2 + ((y - size * 0.92) / (size * 0.3)) ** 2 < 1
+                if head or body:
+                    col = _mix(col, (255, 255, 255), 0.85)
+            out += bytes(col)
+        return bytes(out)
+
+    return png(size, size, (row(y) for y in range(size)))
+
+
+@cache
+def app_icon(color: tuple, glyph: str = "bubble", size: int = 72) -> bytes:
+    """An app icon: a rounded square in the app's colour with a simple white glyph."""
+    r = size * 0.22
+
+    def inside_rounded(x: float, y: float) -> bool:
+        cx = min(max(x, r), size - r)
+        cy = min(max(y, r), size - r)
+        return math.hypot(x - cx, y - cy) <= r
+
+    def on_glyph(x: float, y: float) -> bool:
+        u, v = x / size, y / size
+        if glyph == "bubble":  # a chat bubble with a tail
+            return ((u - 0.5) / 0.3) ** 2 + ((v - 0.47) / 0.25) ** 2 < 1 or (0.28 < u < 0.4 and 0.62 < v < 0.8
+                                                                            and v - 0.62 < (0.4 - u) * 1.5)
+        if glyph == "shield":
+            return 0.28 < u < 0.72 and 0.22 < v < 0.8 and (v < 0.55 or abs(u - 0.5) < (0.8 - v) * 0.9)
+        if glyph == "lock":
+            ring = 0.13 < math.hypot(u - 0.5, v - 0.4) < 0.19 and v < 0.45
+            return ring or (0.3 < u < 0.7 and 0.43 < v < 0.75)
+        return math.hypot(u - 0.5, v - 0.5) < 0.22
+
+    def row(y: int) -> bytes:
+        out = bytearray()
+        for x in range(size):
+            if not inside_rounded(x + 0.5, y + 0.5):
+                col = (255, 255, 255)
+            else:
+                col = _mix(color, tuple(max(0, c - 40) for c in color), y / size)
+                if on_glyph(x + 0.5, y + 0.5):
+                    col = (255, 255, 255)
+            out += bytes(col)
+        return bytes(out)
+
+    return png(size, size, (row(y) for y in range(size)))

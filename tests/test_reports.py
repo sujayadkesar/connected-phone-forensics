@@ -49,7 +49,8 @@ def test_workbook_has_a_summary_and_a_sheet_per_phone(demo_case):
     path = case.outdir / "workbook.xlsx"
     assert path in written
     wb = load_workbook(path)
-    assert wb.sheetnames[0] == "Summary" and len(wb.sheetnames) == 1 + len(case.phones)
+    assert wb.sheetnames[0] == "Summary" and len(wb.sheetnames) == 1 + len(case.phones) + 1
+    assert "Hotspots" in wb.sheetnames and case.hotspots  # the demo's iPhone hotspot, as a network
     summary = wb["Summary"]
     assert {"Summary_glance", "Summary_phones", "Summary_computers"} <= set(summary.tables)
     head = next(c for c in summary["A"] if c.value == "Recovered")  # the at-a-glance table's header

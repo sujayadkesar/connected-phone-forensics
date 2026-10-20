@@ -180,9 +180,11 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
         CREATE TABLE postaladdress(contact_id INTEGER, type INTEGER, label TEXT, street TEXT, city TEXT,
             region TEXT, postal_code TEXT, country_code TEXT, display_address TEXT);
     """)
+    shades = [((92, 149, 255), (36, 86, 222)), ((255, 170, 90), (229, 103, 30)), ((90, 210, 160), (26, 158, 112))]
     for i, (name, number) in enumerate(contacts, 1):
-        d.c.execute("INSERT INTO contact(contact_id, display_name, last_updated_time) VALUES (?,?,?)",
-                    (i, name, ft(base)))
+        top, bottom = shades[(i - 1) % len(shades)]
+        d.c.execute("INSERT INTO contact(contact_id, display_name, last_updated_time, thumbnail) VALUES (?,?,?,?)",
+                    (i, name, ft(base), images.avatar(top, bottom)))
         d.c.execute("INSERT INTO phonenumber VALUES (?,?,?,2,NULL)", (i, number.replace(" ", ""), number))
     d.save(dbdir)
 
@@ -295,11 +297,18 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
                 '"package_name" TEXT NOT NULL UNIQUE, "version" TEXT NOT NULL, "etag" INTEGER NOT NULL DEFAULT 0, '
                 '"favorite_rank" INTEGER NOT NULL DEFAULT -1, "blob" BLOB, "last_updated_time" INTEGER NOT NULL '
                 'DEFAULT 0, "checksum" INTEGER NOT NULL DEFAULT 0, "phoneapp_web_url" TEXT)')
-    for name, pkg, ver in (("WhatsApp", "com.whatsapp", "2.25.18.75"),
-                           ("Signal", "org.thoughtcrime.securesms", "7.48.2"),
-                           ("Proton VPN", "ch.protonvpn.android", "5.11.62.0")):
+    apps = (("WhatsApp", "com.whatsapp", "2.25.18.75", (37, 211, 102), "bubble"),
+            ("Signal", "org.thoughtcrime.securesms", "7.48.2", (58, 118, 240), "shield"),
+            ("Proton VPN", "ch.protonvpn.android", "5.11.62.0", (109, 74, 255), "lock"))
+    for name, pkg, ver, color, glyph in apps:
         d.c.execute("INSERT INTO phone_apps(app_name, package_name, version, blob) VALUES (?,?,?,?)",
-                    (name, pkg, ver, PNG_1x1))
+                    (name, pkg, ver, images.app_icon(color, glyph)))
+    d.c.execute("CREATE TABLE recent_apps(app_id INTEGER PRIMARY KEY, package_name TEXT, app_name TEXT, "
+                "checksum INTEGER, recent_app_rank INTEGER, intent_action TEXT, task_id INTEGER, blob BLOB, "
+                "web_uri TEXT, desktop_uri TEXT)")
+    for rank, (name, pkg, _ver, color, glyph) in enumerate(apps[:2]):
+        d.c.execute("INSERT INTO recent_apps(package_name, app_name, recent_app_rank, blob) VALUES (?,?,?,?)",
+                    (pkg, name, rank, images.app_icon(color, glyph)))
     d.save(dbdir)
 
     # deviceData.db, continuity.db and sharedContent.db (DDL of Phone Link 1.26)

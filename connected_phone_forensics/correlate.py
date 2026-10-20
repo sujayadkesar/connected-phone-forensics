@@ -19,7 +19,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from .decode import apple_model, decode, device_family, display_value
+from .decode import (
+    APPLE_BRANDS,
+    android_model,
+    apple_model,
+    brand_from_org,
+    decode,
+    device_family,
+    display_value,
+    mac_vendor,
+    phone_in_name,
+    usb_brand,
+)
 from .model import Identifier, IdKind, Observation, Strength, phone_key
 from .timeutil import iso
 
@@ -74,6 +85,7 @@ class Device:
     label: str = ""
     phone_os: str | None = None
     device_class: str | None = None
+    brand: str | None = None        # maker, from the model, USB vendor ID, MAC address block or name
     identifiers: dict[Identifier, set[str]] = field(default_factory=dict)
     raw_values: dict[Identifier, set[str]] = field(default_factory=dict)
     channels: dict[str, ChannelSummary] = field(default_factory=dict)
@@ -94,6 +106,7 @@ class Device:
             "confirmed": self.confirmed,
             "phone_os": self.phone_os,
             "device_class": self.device_class,
+            "brand": self.brand,
             "first_seen": iso(self.first_seen),
             "last_seen": iso(self.last_seen),
             "identifiers": [
@@ -192,7 +205,84 @@ def _infer_os(dev: Device, votes: Counter) -> str | None:
             return "ios"
         if i.kind == IdKind.MODEL and i.value.lower().startswith(("iphone", "ipad", "ipod")):
             return "ios"
+    if dev.brand in APPLE_BRANDS:
+        return "ios" if dev.device_class in (None, "phone", "tablet") else None
+    if dev.brand and dev.device_class in (None, "phone", "tablet"):
+        return "android"  # every other phone maker the brand tables know makes Android phones
     return None
+
+
+def _model_name(code: str) -> tuple[str, str] | None:
+    """(brand, "OnePlus 12R (CPH2585)") for an Apple or Android model code."""
+    marketing = apple_model(code)
+    if marketing:
+        return "Apple", f"{marketing} ({code})"
+    hit = android_model(code)
+    if hit:
+        brand, name = hit
+        return brand, name if name.lower() == code.lower() else f"{name} ({code})"
+    return None
+
+
+def _infer_brand(dev: Device, usb_vids: Counter) -> str | None:
+    """Who made the device: its model, its USB vendor ID, its hardware address block, or a name."""
+    votes: Counter = Counter()
+    for i in dev.identifiers:
+        if i.kind == IdKind.MODEL:
+            hit = _model_name(i.value)
+            if hit:
+                votes[hit[0]] += 5
+        elif i.kind in (IdKind.UDID,):
+            votes["Apple"] += 5
+        elif i.kind in (IdKind.BT_MAC, IdKind.WIFI_MAC):
+            octet = int(i.value.replace(":", "")[:2] or "0", 16)
+            if not octet & 0x02:  # a randomised (locally administered) address names no maker
+                brand = brand_from_org(mac_vendor(i.value))
+                if brand:
+                    votes[brand] += 3
+        elif i.kind == IdKind.DEVICE_NAME:
+            hit = phone_in_name(i.value)
+            if hit and hit[0] != "Android":
+                votes[hit[0]] += 1
+    for vid in usb_vids:  # one vote per vendor ID: OPPO's is shared by OnePlus and realme phones
+        brand = usb_brand(vid)
+        if brand:
+            votes[brand] += 4
+    return votes.most_common(1)[0][0] if votes else None
+
+
+_GENERIC_NAMES = ("local area connection", "ethernet", "wi-fi", "wifi", "network", "unidentified network",
+                  "usb ethernet", "remote ndis", "bluetooth network connection")
+
+
+def _name_score(name: str) -> int:
+    low = " ".join(name.lower().split())
+    base = low.rstrip("0123456789 ")
+    if low.startswith(_GENERIC_NAMES) or base in _GENERIC_NAMES:
+        return -5  # Windows' names for a connection, not the phone's
+    hit = phone_in_name(name)
+    if hit:
+        return 4 if hit[1] or "'s " in name.replace("’", "'") else 3
+    return 0
+
+
+def best_name(names: Counter, phone_os: str | None = None) -> str | None:
+    """The name that most looks like a phone's: "Sujay’s iPhone" before "Localhost" before
+    "Local Area Connection", one that agrees with the phone's OS before one that does not, then
+    the most common."""
+    if not names:
+        return None
+
+    def score(name: str) -> int:
+        s = _name_score(name)
+        hit = phone_in_name(name)
+        if hit and phone_os in ("ios", "android"):
+            apple = hit[0] in APPLE_BRANDS
+            s += 2 if apple == (phone_os == "ios") else -2
+        return s
+
+    ranked = sorted(names.items(), key=lambda kv: (-score(kv[0]), -kv[1], len(kv[0]), kv[0]))
+    return ranked[0][0]
 
 
 def _infer_class(dev: Device, votes: Counter) -> str | None:
@@ -231,21 +321,39 @@ def _noun(dev: Device) -> str:
 
 
 def _label(dev: Device, names: Counter) -> str:
-    """A device's name: the name it reports, else its model or number, else what its identifier tells
-    plus the identifier in full ("iPhone 16 family · UDID 00008140-0001541E3E46801C")."""
-    if names:
-        return names.most_common(1)[0][0]
+    """A device's name: the name it reports (the most phone-like one), else its model ("OnePlus 12R
+    (CPH2585)") or number, else its maker and what its identifier tells, with the identifier in full
+    ("vivo phone · USB serial 10BF4E0TPZ002B2", "iPhone 16 family · UDID 00008140-0001541E3E46801C")."""
+    name = best_name(names, dev.phone_os)
+    if name and _name_score(name) > -5:
+        return name
     models = sorted(i.value for i in dev.identifiers if i.kind == IdKind.MODEL)
+    for code in models:
+        hit = _model_name(code)
+        if hit:
+            return hit[1]
     if models:
-        marketing = apple_model(models[0])
-        return f"{marketing} ({models[0]})" if marketing else models[0]
+        return f"{dev.brand} {models[0]}" if dev.brand and not models[0].lower().startswith(dev.brand.lower()) \
+            else models[0]
+    if name:
+        return name
     numbers = sorted(i.value for i in dev.identifiers if i.kind == IdKind.PHONE_NUMBER)
     if numbers:
         return f"Phone line {numbers[0]}"
     i = primary_identifier(dev)
     if i is not None:
         decoded = decode(i.kind, i.value, dev.phone_os)
-        noun = device_family(i.kind.value, i.value) or _noun(dev)
+        family = device_family(i.kind.value, i.value)
+        if family:
+            noun = family
+        elif dev.brand and dev.brand not in APPLE_BRANDS:
+            noun = f"{dev.brand} {_noun(dev).replace('Android ', '').lower()}"
+        else:
+            noun = _noun(dev)
+        if i.kind == IdKind.APP_DEVICE_ID and str(i.value).startswith("phonelink:"):
+            # A Phone Link profile with nothing else: name it by the Windows user it belongs to.
+            users = sorted(dev.users)
+            return f"{noun} in Phone Link" + (f" ({users[0]})" if users else "")
         return f"{noun} · {decoded.kind_label} {display_value(i.kind, i.value)}"
     accounts = sorted(i.value for i in dev.identifiers if i.kind == IdKind.ACCOUNT)
     return f"Account {accounts[0]}" if accounts else "Unknown device"
@@ -298,9 +406,13 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
         names: Counter = Counter()
         os_votes: Counter = Counter()
         class_votes: Counter = Counter()
+        usb_vids: Counter = Counter()
         for idx in idxs:
             obs = observations[idx]
             dev.observation_ids.append(idx)
+            vid = (obs.data or {}).get("vid") if obs.channel.value == "usb" else None
+            if vid:
+                usb_vids[str(vid).upper()] += 1
             for i in obs.device_ids:
                 dev.identifiers.setdefault(i, set()).add(obs.artifact)
                 dev.raw_values.setdefault(i, set()).add(i.raw)
@@ -325,6 +437,8 @@ def build_graph(observations: list[Observation]) -> DeviceGraph:
             members = members_of[root]
             dev.merge_reasons = [r for (a, b), r in reasons.items()
                                  if a in members or b in members]
+        dev.device_class = _infer_class(dev, class_votes)
+        dev.brand = _infer_brand(dev, usb_vids)
         dev.phone_os = _infer_os(dev, os_votes)
         dev.device_class = _infer_class(dev, class_votes)
         dev.label = _label(dev, names)

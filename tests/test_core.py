@@ -336,7 +336,7 @@ def test_devices_without_a_name_get_a_readable_label():
     # Full identifiers, never shortened, and what the identifier tells (the UDID's chip: iPhone 16).
     assert sorted(d.label for d in graph.devices) == [
         "Android phone · USB serial E28E9340",
-        "Phone · Phone Link device ID f77b925a-6e5f-43e4-9baa-097c0b5d0711",
+        "Phone in Phone Link",  # no name: the profile ID stays in its identifiers
         "iPhone 16 family · UDID 00008140-0001541E3E46801C"]
     udid_dev = next(d for d in graph.devices if d.label.startswith("iPhone"))
     decoded = udid_dev.to_dict()["identifiers"][0]["decoded"]

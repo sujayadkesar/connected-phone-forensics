@@ -24,6 +24,7 @@ import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from ..decode import android_model
 from ..model import Channel, IdKind, Observation, Validation, ident
 from ..plugin import Context, Plugin, register
 from ..readers.registry import RegKey
@@ -240,6 +241,10 @@ class WindowsUSBPhones(Plugin):
                         # ContainerIDs are unique; tie them to the serial within this system.
                         ids.append(ident(IdKind.APP_DEVICE_ID, f"win_container:{cid}"))
                     model = next(iter(c.models), None)
+                    if model is None:
+                        # Some phones name an interface node after their model code (OnePlus:
+                        # "CPH2585"); Google Play's device list recognises it.
+                        model = next((d for d in sorted(set(c.interfaces + c.names)) if android_model(d)), None)
                     name = next((nm for nm in c.names
                                  if not (model and nm.upper().endswith(model.upper()))), None)
                     if model:

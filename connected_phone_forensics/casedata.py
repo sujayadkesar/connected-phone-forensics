@@ -101,6 +101,7 @@ class CaseData:
 
     def __post_init__(self) -> None:
         self._by_id = {d["id"]: d for d in self.devices}
+        self._hotspots: list[dict] | None = None
         for rec in self.records:
             rec["_search"] = _search_blob(rec)
 
@@ -181,7 +182,26 @@ class CaseData:
 
     @property
     def phones(self) -> list[dict]:
-        return [d for d in self.devices if d.get("device_class") in (None, "phone", "tablet")]
+        """Phones and tablets, except those known only as hotspots (see :attr:`hotspots`)."""
+        from .content import is_hotspot_only
+
+        return [d for d in self.devices if d.get("device_class") in (None, "phone", "tablet")
+                and not is_hotspot_only(d)]
+
+    @property
+    def hotspot_devices(self) -> list[dict]:
+        from .content import is_hotspot_only
+
+        return [d for d in self.devices if d.get("device_class") in (None, "phone", "tablet") and is_hotspot_only(d)]
+
+    @property
+    def hotspots(self) -> list[dict]:
+        """Phones seen only as Wi-Fi hotspots, grouped by network name (content.hotspot_networks)."""
+        if self._hotspots is None:
+            from .content import hotspot_networks
+
+            self._hotspots = hotspot_networks(self.records, self.devices)
+        return self._hotspots
 
     @property
     def others(self) -> list[dict]:

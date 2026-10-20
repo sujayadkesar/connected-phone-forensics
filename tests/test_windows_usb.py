@@ -83,7 +83,7 @@ def test_usb_phones_grouped_by_container(tmp_path):
     devs = result.graph.devices
     assert len(devs) == 2
     galaxy = next(d for d in devs if d.phone_os == "android")
-    assert galaxy.label == "SM-G900V"
+    assert galaxy.label == "Galaxy S5 (SM-G900V)"  # the model code, named from Google Play's device list
     serial = next(i for i in galaxy.identifiers if i.kind == IdKind.USB_SERIAL)
     assert serial.value == "CE0FA56B" and galaxy.raw_values[serial] == {"ce0fa56b"}
     events = sorted(o.event for o in result.observations if galaxy.id == result.graph.assignment[result.observations.index(o)])

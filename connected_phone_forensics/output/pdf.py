@@ -29,6 +29,7 @@ from ..content import CATEGORIES
 NAVY, NAVY_2, BRAND, BRAND_LIGHT, SKY, YELLOW = "#0B1630", "#172C55", "#2456DE", "#5C95FF", "#7CCBFF", "#FFC23D"
 INK, MUTED, FAINT, LINE, SOFT, ZEBRA = "#0E1A33", "#56657F", "#93A0B8", "#E1E7F1", "#F4F7FC", "#F8FAFD"
 OK, WARN = "#1A8F3C", "#B26B00"
+SKY_DARK = "#0E8FB5"
 CATEGORY_COLOR = {"messages": "#2456DE", "calls": "#1A9E70", "contacts": "#7C5CE0", "media": "#E5671E",
                   "notifications": "#D9A000", "apps": "#0E8FB5", "connections": "#5B6B88"}
 
@@ -96,7 +97,7 @@ S = {
     "body": Style(9), "body_b": Style(9, "semibold"), "small": Style(8, color=MUTED),
     "small_b": Style(8, "semibold"), "tiny": Style(7, color=MUTED), "mono": Style(8, mono=True),
     "mono_s": Style(7.4, mono=True, color=MUTED), "overline": Style(7, "bold", MUTED, caps=True),
-    "th": Style(7.6, "bold", "#FFFFFF"), "kpi": Style(21, "semibold"), "kpi_label": Style(8.2, "medium", MUTED),
+    "th": Style(7.6, "bold", "#FFFFFF"), "kpi": Style(19, "semibold"), "kpi_label": Style(8, "medium", MUTED),
     "cover_over": Style(7.5, "bold", SKY, caps=True), "cover_title": Style(22, "semibold", "#FFFFFF"),
     "cover_sub": Style(9, color="#C9D6F0"), "foot": Style(7, color=FAINT), "chip": Style(7, "bold"),
 }
@@ -481,7 +482,11 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
     confirmed = sum(1 for p in phones if p.get("confirmed"))
     deleted = content.recovered_deleted(items)
     d.section("At a glance")
+    hotspots = case.hotspots
+    sessions = sum(len(n["sessions"]) for n in hotspots)
     cards = [("Phones found", len(phones), f"{confirmed} confirmed by a strong identifier", BRAND),
+             ("Hotspot networks", len(hotspots), f"{_plural(sessions, 'connection')} to phone hotspots"
+              if hotspots else "none joined", SKY_DARK),
              ("Computers examined", len(case.systems), ", ".join(s["label"] for s in case.systems[:3])
               + (" …" if len(case.systems) > 3 else ""), NAVY_2)]
     for cat in CATEGORIES[:6]:
@@ -489,9 +494,12 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
         rec = sum(1 for r in rows if r.get("status"))
         phones_with = len({r["device"] for r in rows if r["device"]})
         sub = (f"{rec} recovered after deletion" if rec else
-               f"from {_plural(phones_with, 'phone')}" if rows else "none recovered")
+               f"from {_plural(phones_with, 'phone')}" if phones_with else
+               "not tied to a phone" if rows else "none recovered")
         cards.append((cat.title, len(rows), sub, CATEGORY_COLOR[cat.key]))
-    cols, gap, ch = 4, 9.0, 62.0
+    cards.append(("Recovered after deletion", deleted, "deleted records found again" if deleted else
+                  "none found", WARN))
+    cols, gap, ch = 5, 8.0, 62.0
     cw = (d.inner - gap * (cols - 1)) / cols
     for i, (title, n, sub, color) in enumerate(cards):
         r, c = divmod(i, cols)
@@ -501,7 +509,7 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
         d.text(x + 12, y + 8, cw - 18, f"{n:,}", "kpi")
         d.text(x + 12, y + 35, cw - 18, title, "kpi_label", wrap="elide")
         d.text(x + 12, y + 47, cw - 18, sub, "tiny", wrap="elide")
-    d.y += 2 * ch + gap + 14
+    d.y += ((len(cards) + cols - 1) // cols) * (ch + gap) + 6
     if deleted:
         d.paragraph(f"{deleted:,} of the items were recovered from deleted or overwritten database records; "
                     "they are marked in the workbook and the report.", "small", 8)
@@ -522,11 +530,13 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
             Cell.of((_recovered_line(per.get(dev["id"], Counter())), "small")),
         ])
     if rows:
-        d.table([("#", 0.35, "center"), ("Phone", 2.3, "left"), ("Main identifier", 2.3, "left"),
-                 ("Seen on", 1.4, "left"), ("First / last seen (UTC)", 1.55, "left"),
-                 ("Connected by", 1.35, "left"), ("Recovered", 2.0, "left")], rows)
+        d.table([("#", 0.48, "center"), ("Phone", 2.3, "left"), ("Main identifier", 2.25, "left"),
+                 ("Seen on", 1.35, "left"), ("First / last seen (UTC)", 1.55, "left"),
+                 ("Connected by", 1.3, "left"), ("Recovered", 1.95, "left")], rows)
     else:
         d.paragraph("No phones were identified in this evidence.", "body", 10)
+    if hotspots:
+        _hotspot_section(d, hotspots)
     unlinked = per.get(None)
     if unlinked:
         d.paragraph(f"{sum(unlinked.values()):,} recovered item(s) could not be tied to a particular phone "
@@ -541,6 +551,46 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
         d.paragraph(f"Acquired live from {a.get('computer')} ({a.get('windows') or 'Windows'}) on "
                     f"{_fmt(a.get('started'))} UTC: {a.get('files_acquired')} files and {a.get('hives_saved')} "
                     f"registry hives copied and hashed, {a.get('errors')} error(s). See the last page.", "small", 8)
+
+
+def _hotspot_section(d: Doc, hotspots: list[dict]) -> None:
+    """Phones known only by their hotspot: one table per network name, a row per access point."""
+    d.section("Phone hotspots joined",
+              "Phones the computers knew only as Wi-Fi hotspots: a network name and the access point "
+              "address (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random "
+              "address each time it is switched on, so one phone's hotspot appears as several access points "
+              "with the same name. The same name does not prove the same phone.")
+    for net in hotspots:
+        n = len(net["sessions"])
+        likely = net["likely_phone"]
+        os_name = {"ios": "iPhone (iOS)", "android": "Android"}.get(net["os"], "")
+        head = f"“{net['ssid']}”"
+        bits = [f"{_plural(n, 'access point')}"]
+        if likely:
+            bits.append(f"likely {likely} (from the network name)")
+        elif os_name:
+            bits.append(os_name)
+        if net["randomised"] == n:
+            bits.append("every address randomised: no maker can be named")
+        bits.append(f"first {_fmt(net['first'])}, last {_fmt(net['last'])} UTC")
+        h = d.measure(" · ".join(bits), "small", d.inner) + 26
+        d.need(h + 60)
+        d.y += 2
+        d.text(d.M, d.y, d.inner, head, "h3")
+        d.y += 15
+        d.y += d.text(d.M, d.y, d.inner, " · ".join(bits), "small") + 5
+        rows = []
+        for s in net["sessions"]:
+            rows.append([
+                Cell.of((s["bssid"] or "—", "mono"), (s["maker"], "tiny")),
+                Cell.of((_fmt(s["first"]), "small")),
+                Cell.of((_fmt(s["last"]), "small")),
+                Cell.of((s["profiles"] or s["names"], "small"), (s["dhcp"], "tiny")),
+                Cell.of((s["computers"] or "—", "small")),
+            ])
+        d.table([("Access point (BSSID)", 1.9, "left"), ("First connected (UTC)", 1.45, "left"),
+                 ("Last connected (UTC)", 1.45, "left"), ("Windows profile · addresses", 2.2, "left"),
+                 ("Computer", 1.1, "left")], rows)
 
 
 def _system_text(s: dict) -> str:

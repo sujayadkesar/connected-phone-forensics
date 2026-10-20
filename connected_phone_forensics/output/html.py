@@ -106,8 +106,41 @@ def _candidate_groups(result: ScanResult) -> str:
             + "".join(items) + "</ul>")
 
 
+def _hotspot_only(dev) -> bool:
+    return set(dev.channels) == {"wifi_hotspot"}
+
+
+def _hotspots(networks: list[dict]) -> str:
+    if not networks:
+        return ""
+    parts = []
+    for net in networks:
+        likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "")
+        rows = "".join(
+            f"<tr><td class='mono'>{escape(s['bssid'] or '—')}<div class='muted'>{escape(s['maker'])}</div></td>"
+            f"<td class='mono'>{escape(_fmt_iso(s['first']))}</td><td class='mono'>{escape(_fmt_iso(s['last']))}</td>"
+            f"<td>{escape(s['profiles'] or s['names'])}<div class='muted'>{escape(s['dhcp'])}</div></td>"
+            f"<td>{escape(s['computers'])}</td><td class='mono'><a href='#{escape(s['device'])}'>"
+            f"{escape(s['device'])}</a></td></tr>" for s in net["sessions"])
+        parts.append(
+            f"<section class='card'><div class='card-head'><h3>“{escape(net['ssid'])}”</h3>"
+            f"<span class='badge'>{len(net['sessions'])} access point(s)</span>"
+            + (f"<span class='badge'>likely {escape(likely)}</span>" if likely else "")
+            + ("<span class='badge warn'>randomised addresses</span>" if net["randomised"] else "")
+            + f"</div><div class='muted'>first connected {escape(_fmt_iso(net['first']))} · last connected "
+            f"{escape(_fmt_iso(net['last']))} UTC · computers: {escape(', '.join(net['computers']) or '—')}</div>"
+            "<table><thead><tr><th>Access point (BSSID)</th><th>First connected</th><th>Last connected</th>"
+            f"<th>Windows profile · addresses</th><th>Computer</th><th>Record</th></tr></thead><tbody>{rows}"
+            "</tbody></table></section>")
+    return ("<h2 id='hotspots'>Phone hotspots joined</h2><p class='note'>Phones the computers knew only as Wi-Fi "
+            "hotspots: a network name and its access point address (BSSID). Android 11 and later, and recent "
+            "iPhones, give the hotspot a new random address each time it is switched on, so one phone's hotspot "
+            "appears as several access points with the same name; they are grouped by that name here. The same "
+            "name does not prove the same phone, and a randomised address names no maker.</p>" + "".join(parts))
+
+
 def _device_cards(result: ScanResult, per_device: dict) -> str:
-    phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
+    phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet") and not _hotspot_only(d)]
     others = [d for d in result.graph.devices if d.device_class not in (None, "phone", "tablet")]
     html = _cards(result, phones, per_device) or '<p class="note">No phones were identified in this evidence.</p>'
     if others:
@@ -324,9 +357,11 @@ def write_html(result: ScanResult, path: Path, companions: tuple[str, ...] = ())
     data = json.dumps(_encode(timeline), default=_jsonable, ensure_ascii=False, separators=(",", ":"))
     data = data.replace("<", "\\u003c")
     records = [rec for _obs, rec in iter_records(result)]
-    items = content.extract(records, [d.to_dict() for d in result.graph.devices])
+    device_dicts = [d.to_dict() for d in result.graph.devices]
+    items = content.extract(records, device_dicts)
     per_device = content.counts(items)
-    phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
+    phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")
+                  and not _hotspot_only(d)]
     n_dev = len(phone_devs)
     n_conf = sum(1 for d in phone_devs if d.confirmed)
     n_unrec = sum(1 for c in result.coverage if c.status in (ERROR, UNRECOGNISED))
@@ -352,7 +387,7 @@ def write_html(result: ScanResult, path: Path, companions: tuple[str, ...] = ())
   <h1>Connected Phone Forensics report</h1>
   <div class="muted">{case}Generated {_fmt(result.finished)} by Connected Phone Forensics {escape(result.tool_version)} ·
   input <span class="mono">{escape(result.input_path)}</span></div>
-  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#recovered">Recovered data</a>
+  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#hotspots">Hotspots</a><a href="#recovered">Recovered data</a>
   <a href="#timeline">Timeline</a><a href="#coverage">Coverage</a>{'<a href="#acquisition">Live acquisition</a>' if result.acquisition else ''}<a href="#method">Method</a>{links}</nav>
 </header>
 <main>
@@ -368,6 +403,7 @@ def write_html(result: ScanResult, path: Path, companions: tuple[str, ...] = ())
 {_candidate_groups(result)}
 <h2 id="devices">Phones</h2>
 {_device_cards(result, per_device)}
+{_hotspots(content.hotspot_networks(records, device_dicts))}
 {_recovered_table(result, items, per_device)}
 <h2 id="timeline">Timeline</h2>
 <div class="filters"><input id="q" placeholder="Search all fields…"><select id="fdev"><option value="">All devices</option></select>

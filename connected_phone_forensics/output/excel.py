@@ -281,6 +281,18 @@ _CHANNEL_COLUMNS = (
     Column("last_seen", "Last seen (UTC)", 19, "time"), Column("observations", "Records", 10, "number"),
     Column("artifacts", "Parsers", 40),
 )
+_HOTSPOT_COLUMNS = (
+    Column("ssid", "Network name (SSID)", 28), Column("likely", "Likely phone (from the name)", 26),
+    Column("access_points", "Access points", 12, "number"), Column("randomised", "Randomised addresses", 13, "number"),
+    Column("first", "First connected (UTC)", 19, "time"), Column("last", "Last connected (UTC)", 19, "time"),
+    Column("computers", "Computers", 22), Column("sheet", "Details", 14),
+)
+_SESSION_COLUMNS = (
+    Column("bssid", "Access point (BSSID)", 20), Column("maker", "Maker", 30),
+    Column("first", "First connected (UTC)", 19, "time"), Column("last", "Last connected (UTC)", 19, "time"),
+    Column("profiles", "Windows profile", 26), Column("names", "Network names", 30), Column("dhcp", "Addresses", 30),
+    Column("computers", "Computer", 16), Column("device", "Record", 10), Column("sources", "Source", 48, "path"),
+)
 _SYSTEM_COLUMNS = (Column("label", "Computer", 22), Column("os", "OS", 10), Column("version", "Version", 40),
                    Column("users", "User profiles", 30))
 _KPI_COLUMNS = (Column("title", "Recovered", 18), Column("items", "Items", 10, "number"),
@@ -305,8 +317,9 @@ def write_workbook(case: CaseData, path: Path, items: dict[str, list[dict]] | No
 
     def sheet_for(d: dict) -> str:
         lbl = d.get("label") or d["id"]
-        if labels[lbl] > 1:  # the same name on several records: the record ID tells the sheets apart
-            lbl = f"{lbl[:31 - len(d['id']) - 3].rstrip()} ({d['id']})"
+        short = lbl.split(" · ")[0]  # "iPhone 16 family · UDID 0000…" -> "iPhone 16 family"
+        if labels[lbl] > 1 or short != lbl or len(lbl) > 31:  # the record ID tells such sheets apart
+            lbl = f"{short[:31 - len(d['id']) - 3].rstrip()} ({d['id']})"
         return sheet_title(lbl, used)
 
     sheet_names = {d["id"]: sheet_for(d) for d in phones}
@@ -355,12 +368,27 @@ def write_workbook(case: CaseData, path: Path, items: dict[str, list[dict]] | No
                f"notifications without a device): see the sheet '{sheet_names[None]}'.")
         w.gap()
 
+    hotspots = case.hotspots
+    if hotspots:
+        hotspot_sheet = sheet_title("Hotspots", used)
+        w.section(f"Phone hotspots joined ({len(hotspots)} networks)", span=len(_HOTSPOT_COLUMNS))
+        w.note("Phones known only as Wi-Fi hotspots, by network name. A phone that randomises its hotspot address "
+               "appears as several access points with the same name; each is listed on the Hotspots sheet.")
+        w.table("hotspots", _HOTSPOT_COLUMNS, [
+            {"ssid": n["ssid"], "likely": n["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(
+                n["os"], ""), "access_points": len(n["sessions"]), "randomised": n["randomised"],
+             "first": n["first"], "last": n["last"], "computers": ", ".join(n["computers"]),
+             "sheet": "Open sheet"} for n in hotspots], flag=None,
+            links={"sheet": f"#'{hotspot_sheet}'!A1"})
+
     w.section(f"Computers examined ({len(case.systems)})", span=len(_SYSTEM_COLUMNS))
     w.table("computers", _SYSTEM_COLUMNS, [_system_row(s) for s in case.systems], flag=None)
     w.finish(freeze="A4")
 
     for d in phones:
         _phone_sheet(wb, sheet_names[d["id"]], d, items, outdir=case.outdir, target=path)
+    if hotspots:
+        _hotspot_sheet(wb, hotspot_sheet, hotspots)
     if unlinked:
         _phone_sheet(wb, sheet_names[None], None, items, outdir=case.outdir, target=path)
 
@@ -426,6 +454,26 @@ def _phone_sheet(wb, name: str, device: dict | None, items: dict[str, list[dict]
     if device and not any_content:
         w.note("No messages, calls, contacts, photos, notifications or apps were recovered for this phone: the "
                "computers only recorded how it connected.")
+    w.finish(freeze="A4")
+
+
+def _hotspot_sheet(wb, name: str, hotspots: list[dict]) -> None:
+    ws = wb.create_sheet(name)
+    ws.sheet_properties.tabColor = "0E8FB5"
+    w = SheetWriter(wb, ws, "Hotspots")
+    total = sum(len(n["sessions"]) for n in hotspots)
+    w.title("Phone hotspots joined", f"{len(hotspots)} network names · {total} access points", span=10)
+    w.note("Android 11 and later, and recent iPhones, give the hotspot a new random address (BSSID) each time it is "
+           "switched on: one phone's hotspot then appears as several access points with the same name. A shared "
+           "name does not prove one phone. Randomised addresses name no maker and cannot be located.")
+    w.gap()
+    for n, net in enumerate(hotspots, 1):
+        likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "")
+        w.section(f"“{net['ssid']}” · {len(net['sessions'])} access point(s)" + (f" · likely {likely}" if likely
+                                                                                 else ""),
+                  span=len(_SESSION_COLUMNS))
+        w.table(f"network_{n}", _SESSION_COLUMNS,
+                [{**s, "sources": ", ".join(s["sources"])} for s in net["sessions"]], flag=None)
     w.finish(freeze="A4")
 
 

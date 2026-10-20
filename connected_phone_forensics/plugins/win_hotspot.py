@@ -197,18 +197,22 @@ class WindowsHotspots(Plugin):
         for prof in hive.subkeys(f"{NL}\\Profiles"):
             name = reg_text(prof.get("ProfileName"))
             name_type = reg_dword(prof.get("NameType"))
+            # Windows names a second profile for the same SSID "<SSID> 2"; the Description keeps the
+            # network's own name, which is what the phone broadcast.
+            description = reg_text(prof.get("Description"))
+            ssid = description if name_type == 71 and description else name
             mac = gateways.get(prof.name.upper())
-            has_sig, os_hint = ssid_phone_signal(name)
+            has_sig, os_hint = ssid_phone_signal(ssid)
             lease = lease_by_mac.get(mac) if mac else None
             signals = (["ssid_name"] if has_sig else []) + (lease["signals"] if lease else [])
             if not signals:
                 skipped += 1
                 continue
             os_hint = os_hint or (lease["phone_os"] if lease else None)
-            ids = [ident(IdKind.DEVICE_NAME, name),
+            ids = [ident(IdKind.DEVICE_NAME, ssid),
                    ident(IdKind.APP_DEVICE_ID, f"wifi_ap_mac:{mac}") if mac else None]
             data = {
-                "profile_name": name, "description": reg_text(prof.get("Description")),
+                "profile_name": name, "description": description, "ssid": ssid,
                 "profile_guid": prof.name, "name_type": _NAME_TYPES.get(name_type, name_type),
                 "gateway_mac": mac, "signals": sorted(set(signals)),
                 "timezone": tz.describe() if tz else "unknown: local time shown as UTC",
@@ -221,7 +225,8 @@ class WindowsHotspots(Plugin):
                 ts = tz.to_utc(local) if tz else local
                 ctx.emit(Observation(
                     artifact=self.id, event=event,
-                    message=f"Connected to phone hotspot \"{name}\": {desc}",
+                    message=f"Connected to phone hotspot \"{ssid}\": {desc}"
+                            + (f" (Windows profile \"{name}\")" if name != ssid else ""),
                     channel=Channel.WIFI_HOTSPOT, timestamp=ts,
                     timestamp_desc=f"{desc} (local time converted with evidence timezone)" if tz
                     else f"{desc} (local time, timezone unknown)",

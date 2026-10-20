@@ -428,16 +428,23 @@ class WindowsPhoneLink(Plugin):
                 if r["address"]:
                     emails[r["contact_id"]].append(r["address"])
         count = 0
+        has_photo = db.schema.has(contact_t, "thumbnail")
         cols = ["contact_id", "display_name", "nickname", "last_updated_time", "company", "job_title"]
-        for r in db.select(contact_t, cols):
+        for r in db.select(contact_t, cols + (["thumbnail"] if has_photo else [])):
             name = r["display_name"] or r["nickname"]
             nums = sorted(set(numbers.get(r["contact_id"], [])))
             for num in nums:
                 if name and _digits(num):
                     prof.contacts.setdefault(_digits(num), name)
+            photo = None
+            blob = r["thumbnail"] if has_photo else None
+            if isinstance(blob, (bytes, bytearray)) and blob:
+                # The contact's picture as the phone synced it (a small JPEG or PNG).
+                photo = ctx.export(f"{prof.device_id}/contacts/{r['contact_id']}_{name or 'contact'}"
+                                   f"{_image_ext(bytes(blob))}", bytes(blob))
             data = {"contact_id": r["contact_id"], "name": name, "numbers": nums,
                     "emails": sorted(set(emails.get(r["contact_id"], []))),
-                    "company": r["company"], "job_title": r["job_title"]}
+                    "company": r["company"], "job_title": r["job_title"], "photo": photo}
             self._obs(ctx, prof, path, contact_t, r["_rowid_"], "contact",
                       f"Contact {name or '(no name)'}" + (f": {', '.join(nums)}" if nums else ""),
                       from_filetime(r["last_updated_time"]), "Contact last updated (Phone Link sync)", data)
@@ -730,16 +737,45 @@ class WindowsPhoneLink(Plugin):
                     return
                 ctx.cover(path, UNRECOGNISED, note=f"no phone_apps table; schema {db.schema.fingerprint()}")
                 return
-            apps = [{"name": r["app_name"], "package": r["package_name"], "version": r["version"],
-                     "last_updated_raw": r["last_updated_time"]}
-                    for r in db.select("phone_apps", ["app_name", "package_name", "version", "last_updated_time"])]
-            if not apps:
-                return
-            ctx.emit(Observation(
-                artifact=self.id, event="phone_app_inventory",
-                message=f"{len(apps)} app(s) installed on the linked phone (from {path.name})",
-                channel=Channel.PHONE_LINK, provenance=ctx.prov(path, "table=phone_apps"),
-                device_ids=prof.ids, data={"apps": apps}, phone_os=prof.phone_os, device_class="phone",
-                user=prof.user,
-            ))
-            n[0] += 1
+            has_icon = db.schema.has("phone_apps", "blob")
+            apps = []
+            for r in db.select("phone_apps", ["app_name", "package_name", "version", "last_updated_time"]
+                               + (["blob"] if has_icon else [])):
+                apps.append({"name": r["app_name"], "package": r["package_name"], "version": r["version"],
+                             "last_updated_raw": r["last_updated_time"],
+                             "icon": self._icon(ctx, prof, r["package_name"], r["blob"] if has_icon else None)})
+            recent = []
+            if db.schema.has("recent_apps", "package_name"):
+                rcols = ["package_name", "app_name", "recent_app_rank"] + (
+                    ["blob"] if db.schema.has("recent_apps", "blob") else [])
+                for r in db.select("recent_apps", rcols):
+                    recent.append({"name": r["app_name"], "package": r["package_name"], "rank": r["recent_app_rank"],
+                                   "icon": self._icon(ctx, prof, r["package_name"], r["blob"] if "blob" in rcols
+                                                      else None)})
+            if apps:
+                ctx.emit(Observation(
+                    artifact=self.id, event="phone_app_inventory",
+                    message=f"{len(apps)} app(s) installed on the linked phone (from {path.name})",
+                    channel=Channel.PHONE_LINK, provenance=ctx.prov(path, "table=phone_apps"),
+                    device_ids=prof.ids, data={"apps": apps}, phone_os=prof.phone_os, device_class="phone",
+                    user=prof.user,
+                ))
+                n[0] += 1
+            if recent:
+                recent.sort(key=lambda a: (a["rank"] is None, a["rank"]))
+                ctx.emit(Observation(
+                    artifact=self.id, event="phone_recent_apps",
+                    message="Recently used apps on the linked phone: " + ", ".join(
+                        str(a["name"] or a["package"]) for a in recent[:10]),
+                    channel=Channel.PHONE_LINK, provenance=ctx.prov(path, "table=recent_apps"),
+                    device_ids=prof.ids, data={"apps": recent}, phone_os=prof.phone_os, device_class="phone",
+                    user=prof.user,
+                ))
+                n[0] += 1
+
+    @staticmethod
+    def _icon(ctx: Context, prof: _Profile, package, blob) -> dict | None:
+        """Save an app's icon (PNG or WebP as Phone Link cached it); one file per package."""
+        if not (isinstance(blob, (bytes, bytearray)) and blob):
+            return None
+        return ctx.export(f"{prof.device_id}/apps/{package or 'app'}{_image_ext(bytes(blob))}", bytes(blob))

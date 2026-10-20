@@ -102,10 +102,11 @@ def test_acquisition_copies_evidence_with_hashes_and_times(computer, tmp_path):
         data = long_path(collection / item.path).read_bytes()
         assert hashlib.sha256(data).hexdigest() == item.sha256 and len(data) == item.size
     base, copies = long_path(computer.base), long_path(collection)
+    # Times travel as Windows FILETIME (100 ns); Linux and macOS file systems keep finer times.
     src_db = next(base.rglob("phone.db"))
-    assert (copies / src_db.relative_to(base)).stat().st_mtime_ns == src_db.stat().st_mtime_ns
+    assert (copies / src_db.relative_to(base)).stat().st_mtime_ns // 100 == src_db.stat().st_mtime_ns // 100
     src_dir = next(base.rglob("Indexed"))
-    assert (copies / src_dir.relative_to(base)).stat().st_mtime_ns == src_dir.stat().st_mtime_ns
+    assert (copies / src_dir.relative_to(base)).stat().st_mtime_ns // 100 == src_dir.stat().st_mtime_ns // 100
     record = json.loads((dest / "acquisition.json").read_text(encoding="utf-8"))
     assert record["summary"]["files_acquired"] == len(acq.items) and record["summary"]["errors"] == 0
     sums = (dest / "acquisition.sha256").read_text(encoding="utf-8").splitlines()

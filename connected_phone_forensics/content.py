@@ -58,8 +58,8 @@ CATEGORIES: tuple[Category, ...] = (
               _COMPUTER, _SOURCE)),
     Category("contacts", "Contacts", "ph.address-book", "The phone's address book",
              (_PHONE, Column("name", "Name", 28), Column("numbers", "Phone numbers", 34),
-              Column("emails", "Email addresses", 30), Column("organisation", "Organisation", 22), _STATUS,
-              _COMPUTER, _SOURCE)),
+              Column("emails", "Email addresses", 30), Column("organisation", "Organisation", 22),
+              Column("file", "Photo (saved copy)", 40, "path"), _STATUS, _COMPUTER, _SOURCE)),
     Category("media", "Photos & files", "ph.image", "Photos, received files and attachments",
              (_TIME, _PHONE, Column("name", "File name", 34), Column("kind", "Kind", 16),
               Column("mime", "Type", 14), Column("size", "Size (bytes)", 13, "number"),
@@ -70,7 +70,9 @@ CATEGORIES: tuple[Category, ...] = (
               Column("text", "Text", 60, "long"), _STATUS, _COMPUTER, _SOURCE)),
     Category("apps", "Apps", "ph.squares-four", "Apps installed on the phone",
              (_PHONE, Column("name", "App", 26), Column("package", "Package / bundle ID", 36),
-              Column("version", "Version", 14), Column("listed_by", "Listed by", 30), _COMPUTER, _SOURCE)),
+              Column("version", "Version", 14), Column("recent", "Recently used", 12),
+              Column("listed_by", "Listed by", 30), Column("file", "Icon (saved copy)", 40, "path"), _COMPUTER,
+              _SOURCE)),
     Category("connections", "Connections", "ph.link", "USB, Bluetooth, hotspot, pairing, backup and app records",
              (_TIME, _PHONE, Column("channel", "Connection", 15), Column("what", "What", 26),
               Column("text", "Details", 60, "long"), _COMPUTER, Column("user", "User", 12), _SOURCE)),
@@ -199,7 +201,8 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
                 exported = a.get("exported_path")
                 out["media"].append({**base, "category": "media", "name": a.get("name") or "(no name)",
                                      "kind": "MMS attachment", "mime": a.get("content_type") or "",
-                                     "size": a.get("size"), "dimensions": "", "party": party, "file": exported or ""})
+                                     "size": a.get("size"), "dimensions": "", "party": party, "file": exported or "",
+                                     "file_sha256": a.get("sha256") or ""})
             continue
 
         if event.startswith("call_"):
@@ -214,11 +217,14 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
             continue
 
         if event.startswith("contact"):
+            photo = data.get("photo") if isinstance(data.get("photo"), dict) else {}
             out["contacts"].append({**base, "category": "contacts", "name": data.get("name") or "",
                                     "numbers": ", ".join(str(n) for n in _as_list(data.get("numbers"))),
                                     "emails": ", ".join(str(e) for e in _as_list(data.get("emails"))),
                                     "organisation": " · ".join(str(x) for x in (data.get("company"),
-                                                                                 data.get("job_title")) if x)})
+                                                                                 data.get("job_title")) if x),
+                                    "file": photo.get("exported_path") or "", "file_sha256": photo.get("sha256") or "",
+                                    "size": photo.get("size")})
             continue
 
         if event.startswith("photo"):
@@ -226,7 +232,8 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
             dims = f"{data['width']}×{data['height']}" if data.get("width") and data.get("height") else ""
             out["media"].append({**base, "category": "media", "name": data.get("name") or "(no name)",
                                  "kind": "Photo", "mime": data.get("mime_type") or "", "size": data.get("size"),
-                                 "dimensions": dims, "party": "", "file": export.get("exported_path") or ""})
+                                 "dimensions": dims, "party": "", "file": export.get("exported_path") or "",
+                                 "file_sha256": export.get("sha256") or ""})
             continue
 
         if event.startswith("rcs_file_"):
@@ -237,7 +244,7 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
                                  "kind": f"RCS file ({direction})", "mime": att.get("content_type") or "",
                                  "size": att.get("size"), "dimensions": "",
                                  "party": ", ".join(names.who(device, n) for n in numbers if n),
-                                 "file": att.get("exported_path") or ""})
+                                 "file": att.get("exported_path") or "", "file_sha256": att.get("sha256") or ""})
             continue
 
         if event == "airdrop_received":
@@ -254,7 +261,7 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
             out["media"].append({**base, "category": "media",
                                  "name": path.rsplit("/", 1)[-1] if path else "(no image data)",
                                  "kind": "Wallpaper", "mime": _mime(path), "size": export.get("size"),
-                                 "dimensions": "", "party": "", "file": path})
+                                 "dimensions": "", "party": "", "file": path, "file_sha256": export.get("sha256") or ""})
             continue
 
         if event in ("notification", "notification_recovered", "notification_iphone") or \
@@ -271,22 +278,34 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
                                          "title": str(title), "text": str(text)})
             continue
 
-        if event in ("phone_app_inventory", "iphone_app_inventory", "device_backup"):
+        if event in ("phone_app_inventory", "iphone_app_inventory", "device_backup", "phone_recent_apps"):
             if event == "device_backup":
                 apps = [{"package": a} for a in _as_list(data.get("installed_applications"))]
                 listed_by = "iPhone backup (Info.plist)"
             else:
                 apps = [a for a in _as_list(data.get("apps")) if isinstance(a, dict)]
-                listed_by = "Phone Link (phoneapps.db)" if event == "phone_app_inventory" else "iPhone Mirroring"
+                listed_by = {"phone_app_inventory": "Phone Link (installed apps)",
+                             "phone_recent_apps": "Phone Link (recently used)"}.get(event, "iPhone Mirroring")
             for a in apps:
                 package = str(a.get("package") or a.get("bundle_id") or "")
                 key = (device, package.lower() or str(a.get("name")))
+                icon = a.get("icon") if isinstance(a.get("icon"), dict) else {}
+                recent = a.get("rank") if event == "phone_recent_apps" else None
                 if key in seen_apps:
-                    if listed_by not in seen_apps[key]["listed_by"]:
-                        seen_apps[key]["listed_by"] += f", {listed_by}"
+                    known = seen_apps[key]
+                    if listed_by not in known["listed_by"]:
+                        known["listed_by"] += f", {listed_by}"
+                    if icon and not known.get("file"):
+                        known.update(file=icon.get("exported_path") or "", file_sha256=icon.get("sha256") or "")
+                    if recent is not None:
+                        known["recent"] = f"#{int(recent) + 1}" if str(recent).lstrip("-").isdigit() else str(recent)
                     continue
                 item = {**base, "category": "apps", "time": None, "name": str(a.get("name") or ""),
-                        "package": package, "version": str(a.get("version") or ""), "listed_by": listed_by}
+                        "package": package, "version": str(a.get("version") or ""), "listed_by": listed_by,
+                        "file": icon.get("exported_path") or "", "file_sha256": icon.get("sha256") or "",
+                        "size": icon.get("size"),
+                        "recent": (f"#{int(recent) + 1}" if str(recent).lstrip("-").isdigit() else str(recent))
+                        if recent is not None else ""}
                 seen_apps[key] = item
                 out["apps"].append(item)
             if event != "device_backup":
@@ -359,7 +378,8 @@ def phone_facts(device: dict) -> dict[str, Any]:
     os_name = OS_LABEL.get(device.get("phone_os") or "", "")
     version = first("os_version")
     if version and os_name:
-        os_name = f"{os_name} {version['value']}"
+        v = str(version["value"])
+        os_name = v if v.lower().startswith(os_name.lower()) else f"{os_name} {v}"  # "Android 16", not twice
     primary = device.get("primary_identifier") or {}
     channels = [CHANNEL_LABEL.get(c["channel"], c["channel"]) for c in device.get("channels") or []]
     return {
@@ -380,3 +400,95 @@ def phone_facts(device: dict) -> dict[str, Any]:
                          "fields": (i.get("decoded") or {}).get("fields") or [],
                          "strength": i.get("strength") or "", "sources": i.get("sources") or []} for i in ids],
     }
+
+
+def is_hotspot_only(device: dict) -> bool:
+    """A phone the computers knew only as a Wi-Fi hotspot (a network name and its BSSID)."""
+    channels = {c.get("channel") for c in device.get("channels") or []}
+    return channels == {"wifi_hotspot"}
+
+
+def _mac_text(value: str) -> str:
+    hexa = re.sub(r"[^0-9A-Fa-f]", "", str(value)).upper()
+    return ":".join(hexa[i:i + 2] for i in range(0, 12, 2)) if len(hexa) == 12 else str(value)
+
+
+def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
+    """Phones seen only as hotspots, grouped by network name (SSID).
+
+    Android (since 11) and iOS give a hotspot a new random BSSID each time it is switched on, so one
+    phone's hotspot appears as several access points with the same name. Each access point stays
+    one session here, with its own times; the network groups them. A shared name does not prove
+    one phone: two phones can use the same name.
+    """
+    from .decode import mac_vendor, phone_in_name
+
+    hotspot_devs = {d["id"]: d for d in devices if is_hotspot_only(d)}
+    if not hotspot_devs:
+        return []
+    by_dev: dict[str, list[dict]] = defaultdict(list)
+    for index, r in enumerate(records):
+        if r.get("device") in hotspot_devs:
+            by_dev[r["device"]].append({**r, "_index": index})
+    networks: dict[str, dict] = {}
+    for dev_id, dev in hotspot_devs.items():
+        recs = by_dev.get(dev_id, [])
+        ssids = Counter(str(x).strip() for r in recs for x in [(r.get("data") or {}).get("ssid")
+                                                              or (r.get("data") or {}).get("description")] if x)
+        # The device's own name (the most phone-like of its SSIDs) names the network.
+        ssid = dev.get("label") or (ssids.most_common(1)[0][0] if ssids else dev_id)
+        bssids = sorted({i.get("value", "").split(":", 1)[-1] for i in dev.get("identifiers") or []
+                         if str(i.get("value", "")).startswith("wifi_ap_mac:")})
+        times = sorted(r["datetime"] for r in recs if r.get("datetime"))
+        first = min((r["datetime"] for r in recs if r.get("datetime") and "first" in r.get("event", "")
+                     or r.get("event") == "hotspot_added" and r.get("datetime")), default=times[0] if times else None)
+        dhcp = next(((r.get("data") or {}) for r in recs if r.get("event") == "hotspot_dhcp_lease"), {})
+        profiles = sorted({str((r.get("data") or {}).get("profile_name")) for r in recs
+                           if (r.get("data") or {}).get("profile_name")})
+        sessions = []
+        for b in bssids or [""]:
+            mac = _mac_text(b) if b else ""
+            randomised = bool(mac) and bool(int(mac[:2], 16) & 0x02)
+            sessions.append({
+                "device": dev_id, "bssid": mac, "randomised": randomised,
+                "maker": "" if not mac else ("randomised address (no maker)" if randomised
+                                              else (mac_vendor(mac) or "unknown maker")),
+                "first": first, "last": times[-1] if times else None,
+                "names": ", ".join(sorted(ssids)) if len(ssids) > 1 else ssid,
+                "profiles": ", ".join(profiles),
+                "dhcp": " · ".join(x for x in (f"phone {dhcp.get('gateway_ip') or dhcp.get('router_ip')}"
+                                               if dhcp.get("gateway_ip") or dhcp.get("router_ip") else "",
+                                               f"computer {dhcp.get('dhcp_ip') or dhcp.get('ip')}"
+                                               if dhcp.get("dhcp_ip") or dhcp.get("ip") else "") if x),
+                "computers": ", ".join(dev.get("systems") or []), "os": dev.get("phone_os") or "",
+                "records": [r["_index"] for r in recs],
+                "sources": sorted({r.get("source_path") or "" for r in recs} - {""}),
+            })
+        key = " ".join(ssid.lower().split())
+        net = networks.setdefault(key, {"ssid": ssid, "sessions": [], "devices": []})
+        net["sessions"].extend(sessions)
+        net["devices"].append(dev_id)
+    out = []
+    for net in networks.values():
+        sessions = sorted(net["sessions"], key=lambda s: (s["first"] or s["last"] or "", s["bssid"]))
+        firsts = [s["first"] for s in sessions if s["first"]]
+        lasts = [s["last"] for s in sessions if s["last"]]
+        oses = Counter(s["os"] for s in sessions if s["os"])
+        hit = phone_in_name(net["ssid"])
+        likely = ""
+        if hit:
+            brand, model = hit
+            likely = model or (f"{brand} phone" if brand not in ("Android",) else "Android phone")
+            if brand == "Apple" and not model:
+                likely = "iPhone"
+        os_name = oses.most_common(1)[0][0] if oses else (
+            "ios" if hit and hit[0] == "Apple" else "android" if hit else "")
+        out.append({
+            "ssid": net["ssid"], "sessions": sessions, "devices": net["devices"],
+            "first": min(firsts) if firsts else None, "last": max(lasts) if lasts else None,
+            "likely_phone": likely, "os": os_name,
+            "randomised": sum(1 for s in sessions if s["randomised"]),
+            "computers": sorted({c for s in sessions for c in s["computers"].split(", ") if c}),
+        })
+    out.sort(key=lambda n: (-(len(n["sessions"])), n["ssid"].lower()))
+    return out

@@ -164,6 +164,139 @@ def mac_vendor(mac: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=1)
+def _android_models() -> dict[str, tuple[str, str]]:
+    path = DATA / "android_models.tsv.gz"
+    if not path.is_file():
+        return {}
+    out = {}
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            code, brand, name = (line.rstrip("\n").split("\t") + ["", ""])[:3]
+            out[code] = (brand, name)
+    return out
+
+
+@lru_cache(maxsize=1)
+def _marketing_names() -> dict[str, tuple[str, str]]:
+    """Lower-case marketing name -> (brand, name), to recognise a model in free text."""
+    out: dict[str, tuple[str, str]] = {}
+    for brand, name in _android_models().values():
+        if name and len(name) > 3:
+            out.setdefault(name.lower(), (brand, name))
+    return out
+
+
+def android_model(code: str) -> tuple[str, str] | None:
+    """(brand, marketing name) for an Android model code, from Google Play's device list:
+    CPH2585 -> ("OnePlus", "OnePlus 12R"), SM-S901E -> ("Samsung", "Galaxy S22")."""
+    key = " ".join(str(code).split()).upper()
+    hit = _android_models().get(key)
+    if hit is None:
+        return None
+    brand, name = hit
+    if not name:  # the code is the marketing name ("Pixel 8")
+        name = code if code.lower().startswith(brand.lower()) else f"{brand} {code}"
+    return brand, name
+
+
+# USB vendor IDs of phone makers, by the name people know them by. The USB ID repository spells
+# some differently, and lacks a few (vivo's 2D95).
+PHONE_USB_VENDORS = {
+    "05AC": "Apple", "04E8": "Samsung", "18D1": "Google", "2717": "Xiaomi", "22D9": "OPPO", "2A70": "OnePlus",
+    "2D95": "vivo", "12D1": "Huawei", "22B8": "Motorola", "17EF": "Lenovo", "0BB4": "HTC", "1004": "LG",
+    "0FCE": "Sony", "19D2": "ZTE", "1BBB": "TCL", "2E04": "Nokia", "0489": "Foxconn", "2A45": "Meizu",
+    "2AE5": "Fairphone", "0B05": "ASUS", "1949": "Amazon", "0E8D": "MediaTek", "05C6": "Qualcomm",
+    "1782": "Unisoc",
+}
+
+
+@lru_cache(maxsize=1)
+def _usb_vendors() -> dict[str, str]:
+    path = DATA / "usb_vendors.tsv.gz"
+    if not path.is_file():
+        return {}
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        return dict(line.rstrip("\n").split("\t", 1) for line in f if line.strip() and not line.startswith("#"))
+
+
+def usb_vendor(vid: str | None) -> str | None:
+    """The maker behind a USB vendor ID (2D95 -> vivo, 04E8 -> Samsung Electronics Co., Ltd)."""
+    if not vid:
+        return None
+    key = str(vid).upper().removeprefix("0X").zfill(4)
+    return PHONE_USB_VENDORS.get(key) or _usb_vendors().get(key)
+
+
+def usb_brand(vid: str | None) -> str | None:
+    """A phone brand from a USB vendor ID, or None for chip makers and unknown vendors."""
+    key = str(vid or "").upper().removeprefix("0X").zfill(4)
+    brand = PHONE_USB_VENDORS.get(key)
+    return None if brand in (None, "Foxconn", "MediaTek", "Qualcomm", "Unisoc") else brand
+
+
+# Phone brands, as words to find in an organisation, device or network name.
+_BRAND_WORDS = [
+    ("iphone", "Apple"), ("ipad", "Apple"), ("apple", "Apple"), ("galaxy", "Samsung"), ("samsung", "Samsung"),
+    ("oneplus", "OnePlus"), ("one plus", "OnePlus"), ("nord", "OnePlus"), ("redmi", "Redmi"), ("poco", "POCO"),
+    ("xiaomi", "Xiaomi"), ("realme", "realme"), ("narzo", "realme"), ("oppo", "OPPO"), ("iqoo", "iQOO"),
+    ("vivo", "vivo"), ("pixel", "Google"), ("google", "Google"), ("motorola", "Motorola"), ("moto ", "Motorola"),
+    ("nokia", "Nokia"), ("hmd global", "Nokia"), ("huawei", "Huawei"), ("honor", "HONOR"), ("infinix", "Infinix"),
+    ("tecno", "TECNO"), ("itel", "itel"), ("nothing", "Nothing"), ("lava", "Lava"), ("micromax", "Micromax"),
+    ("sony", "Sony"), ("xperia", "Sony"), ("asus", "ASUS"), ("zenfone", "ASUS"), ("lg electronics", "LG"),
+    ("fairphone", "Fairphone"), ("meizu", "Meizu"), ("lenovo", "Lenovo"), ("zte", "ZTE"), ("nubia", "nubia"),
+    ("tcl", "TCL"), ("alcatel", "Alcatel"), ("htc", "HTC"), ("blackberry", "BlackBerry"), ("jio", "Jio"),
+    ("androidap", "Android"),
+]
+APPLE_BRANDS = {"Apple"}
+
+
+def brand_from_org(org: str | None) -> str | None:
+    """A phone brand from an IEEE organisation name ("Realme Chongqing Mobile..." -> "realme"), or None."""
+    text = f" {(org or '').lower()} "
+    for word, brand in _BRAND_WORDS:
+        if word in ("moto ", "nord", "pixel", "galaxy", "iphone", "ipad", "androidap", "nothing", "lava", "jio",
+                    "itel"):
+            continue  # product words, not company names; "Nothing"/"Lava"/"Jio" are too generic here
+        if re.search(rf"\b{re.escape(word)}\b", text):
+            return brand
+    if "nothing technology" in text:
+        return "Nothing"
+    if "transsion" in text:
+        return "TECNO"
+    if "guangdong oppo" in text:
+        return "OPPO"
+    return None
+
+
+def phone_in_name(name: str | None) -> tuple[str, str | None] | None:
+    """A phone brand, and the model when one is named, in free text such as a hotspot or device name:
+    "OnePlus 13s 1D8C" -> ("OnePlus", "OnePlus 13s"); "Sujay’s iPhone" -> ("Apple", None)."""
+    if not name:
+        return None
+    text = " ".join(str(name).replace("’", "'").split())
+    low = text.lower()
+    if low.startswith(("androidap", "android_", "android ap")):
+        return "Android", None  # Android's default hotspot name, AndroidAP_1234
+    words = low.split(" ")
+    names = _marketing_names()
+    for n in range(min(len(words), 6), 0, -1):  # the longest model name the text starts with
+        hit = names.get(" ".join(words[:n]))
+        if hit and n > 1:
+            return hit[0], hit[1]
+    for word, brand in _BRAND_WORDS:
+        pattern = rf"\b{re.escape(word.strip())}\b" if word.strip() else None
+        if pattern and re.search(pattern, low):
+            if word == "nothing" and "phone" not in low:
+                continue  # "nothing" alone is not a phone
+            if word in ("lava", "jio", "itel", "honor", "tcl", "htc", "zte") and len(words) > 4:
+                continue
+            return brand, None
+    return None
+
+
 def calling_code(number: str) -> tuple[str, str] | None:
     digits = re.sub(r"\D", "", number)
     for n in (3, 2, 1):

@@ -10,11 +10,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # ubuntu-24.04 rather than ubuntu-latest: Qt's system libraries differ on newer images.
+        os: [ubuntu-24.04, windows-latest, macos-latest]
         python: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: System libraries for Qt (Linux)
@@ -24,7 +25,18 @@ jobs:
       - run: python -m ruff check connected_phone_forensics tests
       - name: Report failing tests as annotations
         run: python -m pip install pytest-github-actions-annotate-failures
-      - run: python -m pytest -rfE
+      - name: Tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -X faulthandler -m pytest -rfE 2>&1 | tee pytest.log
+      - name: Show the end of a failed test run
+        # A crash (for example in Qt) leaves no per-test annotation; this puts the last lines of
+        # the run where everyone can read them.
+        if: failure()
+        shell: bash
+        run: |
+          tail -c 5000 pytest.log | python -c "import sys; t = sys.stdin.read().replace('%', '%25').replace('\r', '').replace('\n', '%0A'); print('::error title=Last lines of the test run::' + t)"
       - name: CLI smoke test
         run: |
           cpf --version
