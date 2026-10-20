@@ -105,8 +105,8 @@ def test_phonelink_rcs_messages_and_file_transfers(tmp_path):
     assert "table=rcs_chat rowid=3003 recovered_from=db" in rec.provenance.locator
     ft = ev["rcs_file_received"][0]
     att = ft.data["attachment"]
-    assert att["name"] == "plans.jpg" and att["content_type"] == "image/jpeg"
-    assert (tmp_path / "exports" / att["exported_path"]).read_bytes().startswith(b"\xff\xd8")
+    assert att["name"] == "plans.png" and att["content_type"] == "image/png"
+    assert (tmp_path / "exports" / att["exported_path"]).read_bytes().startswith(b"\x89PNG")
     assert ft.timestamp == BASE + timedelta(seconds=1210)
     assert ft.provenance.locator == "table=rcs_filetransfer rowid=3101"
     # Every RCS table present is parsed, so none is reported as skipped.
@@ -149,8 +149,8 @@ def test_phonelink_other_databases(tmp_path):
     result = scan(tmp_path, plugin_ids=["win_phonelink"], export_dir=tmp_path / "exports")
     ev = _events(result)
     wall = ev["phone_wallpaper"][0]
-    assert wall.data["wallpaper_type"] == 0 and wall.data["export"]["exported_path"].endswith(".jpg")
-    assert (tmp_path / "exports" / wall.data["export"]["exported_path"]).read_bytes().startswith(b"\xff\xd8")
+    assert wall.data["wallpaper_type"] == 0 and wall.data["export"]["exported_path"].endswith(".png")
+    assert (tmp_path / "exports" / wall.data["export"]["exported_path"]).read_bytes().startswith(b"\x89PNG")
     cov = _coverage(result)
     assert cov["deviceData.db"].status == "parsed"
     # Known by their tables, but value formats are undocumented: unrecognised, with row counts.

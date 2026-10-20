@@ -196,6 +196,11 @@ QPushButton#Nav:disabled {{ color: {p.faint}; }}
 #Notice {{ background: {mix(p.surface, p.warn, 0.07)}; border: 1px solid {mix(p.border, p.warn, 0.45)};
     border-radius: 10px; }}
 #Chip {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 10px; }}
+#Tile {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 12px; }}
+#Tile:hover {{ border-color: {p.faint}; }}
+#Tile[selected="true"] {{ background: {mix(p.surface, p.accent, 0.08)}; border: 1px solid {p.accent}; }}
+#TileValue {{ font-size: 15pt; font-weight: 600; }}
+#Preview {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 10px; padding: 6px; }}
 #ChipText {{ font-size: 8.5pt; font-weight: 500; color: {p.text}; }}
 #IconBadge {{ border-radius: 10px; }}
 #StepNumber {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 14px; color: {p.muted};
@@ -260,7 +265,7 @@ QHeaderView::section:hover {{ color: {p.text}; }}
 QListWidget {{ background: transparent; border: none; outline: none; }}
 QListWidget::item {{ border: none; border-radius: 10px; margin: 1px 0; }}
 QListWidget::item:hover {{ background: {p.raised}; }}
-QListWidget::item:selected {{ background: {p.accent_soft}; }}
+QListWidget::item:selected {{ background: {p.accent_soft}; color: {p.text}; }}
 QPlainTextEdit, QTextEdit {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 8px; padding: 6px;
     selection-background-color: {p.accent}; selection-color: {p.accent_text}; }}
 

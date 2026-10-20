@@ -556,8 +556,10 @@ def _wallpaper(case: CaseData, dev: dict, items: dict[str, list[dict]]) -> Path 
         return None
     for r in items["media"]:
         if r["device"] == dev["id"] and r["kind"] == "Wallpaper" and r.get("file"):
+            from ..evidence import long_path
+
             p = Path(case.outdir) / "exports" / r["file"]
-            if p.is_file():
+            if long_path(p).is_file():
                 return p
     return None
 

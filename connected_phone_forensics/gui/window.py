@@ -25,11 +25,13 @@ from .casedata import REQUIRED_FILES, CaseData
 from .widgets import THEME, Toast, button, choose_folder, hbox, label, tool_button, vbox
 
 ORG, APP = "ConnectedPhoneForensics", "Connected Phone Forensics"
+CASE_PAGES = ("overview", "devices", "data", "timeline", "coverage", "issues")
 
 NAV = [
     ("new", "New scan", "ph.plus-circle"),
     ("overview", "Overview", "ph.squares-four"),
     ("devices", "Devices", "ph.device-mobile"),
+    ("data", "Recovered data", "ph.database"),
     ("timeline", "Timeline", "ph.clock-counter-clockwise"),
     ("coverage", "Coverage", "ph.files"),
     ("issues", "Issues", "ph.warning-circle"),
@@ -116,7 +118,7 @@ class Sidebar(QFrame):
             n = len(case.phones)
             self.case_sub.setText(f"{n} phone{'s' if n != 1 else ''} · {len(case.systems)} "
                                   f"computer{'s' if len(case.systems) != 1 else ''}")
-        for key in ("overview", "devices", "timeline", "coverage", "issues"):
+        for key in CASE_PAGES:
             self.buttons[key].setEnabled(case is not None)
         if case:
             self.buttons["devices"].set_count(len(case.devices))
@@ -132,6 +134,7 @@ class MainWindow(QMainWindow):
     def __init__(self, settings: QSettings | None = None):
         super().__init__()
         from .pages.coverage import CoveragePage
+        from .pages.data import DataPage
         from .pages.devices import DevicesPage
         from .pages.home import HomePage
         from .pages.issues import IssuesPage
@@ -149,7 +152,8 @@ class MainWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.pages: dict[str, QWidget] = {
             "new": HomePage(self), "scan": ScanPage(self), "overview": OverviewPage(self),
-            "devices": DevicesPage(self), "timeline": TimelinePage(self), "coverage": CoveragePage(self),
+            "devices": DevicesPage(self), "data": DataPage(self), "timeline": TimelinePage(self),
+            "coverage": CoveragePage(self),
             "issues": IssuesPage(self),
         }
         for page in self.pages.values():
@@ -182,7 +186,7 @@ class MainWindow(QMainWindow):
     def go(self, key: str, arg=None) -> None:
         if key == "new" and self.scan_job is not None:
             key = "scan"
-        if key in ("overview", "devices", "timeline", "coverage", "issues") and self.case is None:
+        if key in CASE_PAGES and self.case is None:
             key = "new"
         page = self.pages[key]
         self.stack.setCurrentWidget(page)
@@ -252,8 +256,12 @@ class MainWindow(QMainWindow):
     def show_case(self, case: CaseData) -> None:
         self.case = case
         self.sidebar.set_case(case)
-        for key in ("overview", "devices", "timeline", "coverage", "issues"):
-            self.pages[key].set_case(case)
+        data = self.pages["data"]
+        data.set_case(case)  # first: the other pages use what it extracted
+        for key in CASE_PAGES:
+            if key != "data":
+                self.pages[key].set_case(case)
+        self.sidebar.buttons["data"].set_count(sum(len(v) for k, v in data.items.items() if k != "connections"))
         self.setWindowTitle(f"{case.title} — {APP}")
         self.go("overview")
 

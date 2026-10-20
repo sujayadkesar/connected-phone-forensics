@@ -200,3 +200,54 @@ def test_running_system_drive_is_recognised(tmp_path):
     if os.name == "nt":
         assert is_system_drive_root(Path(os.environ.get("SYSTEMDRIVE", "C:") + "\\"))
     assert not is_system_drive_root(tmp_path)
+
+
+def _open_demo_case(app, window, tmp_path):
+    from connected_phone_forensics.demo import build_demo_evidence
+    from connected_phone_forensics.engine import scan
+    from connected_phone_forensics.output import write_all
+
+    evidence = build_demo_evidence(tmp_path / "case")
+    write_all(scan(evidence, export_dir=tmp_path / "out" / "exports"), tmp_path / "out", pdf=False, xlsx=False)
+    window.open_results(tmp_path / "out")
+    assert _wait(app, lambda: window.case is not None, 60)
+    return window.case
+
+
+def test_recovered_data_page_filters_and_links(app, window, tmp_path):
+    case = _open_demo_case(app, window, tmp_path)
+    page = window.pages["data"]
+    window.go("data")
+    assert page.current == "messages" and int(page.tiles["messages"].count.text()) == 9
+    page.search.setText("jordan")
+    page._apply()
+    shown = page.models["messages"].visible_rows()
+    assert shown and all("jordan" in r["_search"] for r in shown)
+    page.search.setText("")
+    page.deleted_only.setChecked(True)
+    assert {r["text"] for r in page.models["messages"].visible_rows()} == {
+        "Bring the documents. Delete this.", "Wipe the laptop tonight"}
+    assert page.tiles["calls"].count.text() == "0"  # tiles count what the filters leave
+    phone = next(d["id"] for d in case.phones if d["label"] == "Phone line +14155550199")
+    window.go("data", {"device": phone, "category": "calls"})
+    assert not page.deleted_only.isChecked() and page.current == "calls"
+    assert {r["device"] for r in page.models["calls"].visible_rows()} == {phone}
+    record = page.models["calls"].visible_rows()[0]["record"]
+    window.go("timeline", {"record": record})
+    tl = window.pages["timeline"]
+    assert tl.model.row(tl.table.currentIndex().row()) is case.records[record]
+
+
+def test_device_page_draws_the_phone_and_lists_every_identifier(app, window, tmp_path):
+    from connected_phone_forensics.gui.pages.devices import IdentifierRow, PhoneView
+
+    case = _open_demo_case(app, window, tmp_path)
+    phone = next(d for d in case.phones if any(i["kind"] == "udid" for i in d["identifiers"]))
+    window.go("devices", phone["id"])
+    page = window.pages["devices"]
+    assert page.current == phone["id"]
+    assert page.detail.findChildren(PhoneView)
+    rows = [r for r in page.detail.findChildren(IdentifierRow) if r.isVisibleTo(page.detail)]  # not the old view
+    assert len(rows) == len(phone["identifiers"])
+    text = " ".join(lbl.text() for r in rows for lbl in r.findChildren(type(page.list_empty)))
+    assert "A16 Bionic" in text  # the UDID decoded, not trimmed

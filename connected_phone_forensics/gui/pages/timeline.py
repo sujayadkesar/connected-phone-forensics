@@ -144,10 +144,19 @@ class TimelinePage(QWidget):
         self._apply()
 
     def focus_item(self, arg) -> None:
+        """``{"device": id}`` filters to a device; ``{"record": index}`` selects one record."""
         if isinstance(arg, dict) and arg.get("device"):
             self._clear(apply=False)
             self.f_device.select(arg["device"])
             self._apply()
+        elif isinstance(arg, dict) and isinstance(arg.get("record"), int) and self.case:
+            self._clear(apply=False)
+            self._apply()
+            target = self.case.records[arg["record"]] if 0 <= arg["record"] < len(self.case.records) else None
+            row = next((i for i in range(len(self.model.visible)) if self.model.row(i) is target), -1)
+            if row >= 0:
+                self.table.selectRow(row)
+                self.table.scrollTo(self.model.index(row, 0), self.table.ScrollHint.PositionAtCenter)
 
     def _clear(self, apply: bool = True) -> None:
         for f in (self.f_device, self.f_channel, self.f_system, self.f_parser):

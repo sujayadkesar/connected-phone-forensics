@@ -18,6 +18,8 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from . import images
+
 UTC = timezone.utc
 PNG_1x1 = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -218,7 +220,7 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
                 (ft(base) + 900 * 10_000_000, friend_no.replace(" ", "")))
     d.c.execute("INSERT INTO mms_part VALUES (1, 2001, 0, NULL, 'text/plain', 'here it is', NULL, 106, NULL)")
     d.c.execute("INSERT INTO mms_part VALUES (2, 2001, 1, 'img', 'image/png', NULL, 'IMG_0042.png', 0, ?)",
-                (PNG_1x1,))
+                (images.document(),))
     # RCS thread 30 falls back to SMS/MMS thread 10 with the same friend.
     d.c.execute("INSERT INTO rcs_conversation VALUES (30, 10, ?, ?, 3, 0, 0, 0, 0)",
                 (friend_no.replace(" ", ""), ft(base) + 1300 * 10_000_000))
@@ -230,9 +232,10 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
     for mid, frm, typ, body, offset in rcs:
         d.c.execute("INSERT INTO rcs_chat VALUES (?, 30, 'text/plain', 2, ?, ?, ?, ?, 2, 1, 0, 'session-30', 0, 0)",
                     (mid, frm, typ, body, ft(base) + offset * 10_000_000))
-    d.c.execute("INSERT INTO rcs_filetransfer VALUES (3101, 30, 'image/jpeg', 2, ?, 1, ?, 2, 1, 0, 'session-30', "
-                "'plans.jpg', ?, ?, 0, 0)",
-                (friend_no.replace(" ", ""), ft(base) + 1210 * 10_000_000, len(JPEG_STUB), JPEG_STUB))
+    plan = images.floor_plan()
+    d.c.execute("INSERT INTO rcs_filetransfer VALUES (3101, 30, 'image/png', 2, ?, 1, ?, 2, 1, 0, 'session-30', "
+                "'plans.png', ?, ?, 0, 0)",
+                (friend_no.replace(" ", ""), ft(base) + 1210 * 10_000_000, len(plan), plan))
     d.checkpoint()
     d.c.execute("DELETE FROM message WHERE message_id=1003")  # deleted after the checkpoint
     d.c.execute("DELETE FROM rcs_chat WHERE message_id=3003")
@@ -280,9 +283,10 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
                 "size INTEGER, uri TEXT, thumbnail BLOB, media BLOB)")
     d.c.execute("CREATE TABLE photo(photo_id INTEGER PRIMARY KEY, name TEXT, last_updated_time INTEGER, "
                 "size INTEGER, uri TEXT, thumbnail BLOB, blob BLOB)")
-    d.c.execute("INSERT INTO media VALUES (1, 'PXL_20250614_083012345.jpg', 'image/jpeg', ?, ?, ?, 1, 1, 0, ?, "
+    photo = images.landscape()
+    d.c.execute("INSERT INTO media VALUES (1, 'PXL_20250614_083012345.png', 'image/png', ?, ?, ?, 240, 320, 0, ?, "
                 "'content://media/external/images/media/88', ?, ?)",
-                (ft(base), ft(base) - 600 * 10_000_000, ft(base), len(PNG_1x1), PNG_1x1, PNG_1x1))
+                (ft(base), ft(base) - 600 * 10_000_000, ft(base), len(photo), photo, photo))
     d.save(dbdir)
 
     # phoneapps.db (psst DDL) and an undocumented deviceData.db
@@ -303,7 +307,7 @@ def build_phonelink_profile(users_dir: Path, user: str, device_id: str, *, phone
     d.c.executescript(_SYNC_DDL + "CREATE TABLE wallpaper(wallpaper_type INTEGER PRIMARY KEY NOT NULL, "
                                   "wallpaper_id INTEGER NOT NULL, blob BLOB);")
     d.c.execute("INSERT INTO content_sequence(content_type, sequence, expected) VALUES ('wallpaper', 2, 2)")
-    d.c.execute("INSERT INTO wallpaper VALUES (0, 7, ?)", (JPEG_STUB,))
+    d.c.execute("INSERT INTO wallpaper VALUES (0, 7, ?)", (images.wallpaper(),))
     d.save(dbdir)
     d = _LiveDB("continuity.db")
     d.c.executescript(CONTINUITY_DDL)

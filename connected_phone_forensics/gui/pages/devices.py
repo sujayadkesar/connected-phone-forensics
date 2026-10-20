@@ -1,10 +1,19 @@
-"""Devices: a searchable list, and everything known about the selected device."""
+"""Devices: a searchable list, and everything known about the selected device.
+
+The selected phone is drawn as it most likely looks (from its model or the chip in its UDID),
+with the wallpaper recovered from Phone Link on its screen when there is one, beside who and
+what it is. Its identifiers are listed in full with what each one tells.
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from pathlib import Path
+
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QPainter, QRadialGradient
 from PySide6.QtWidgets import QFrame, QListWidget, QListWidgetItem, QSplitter, QWidget
 
+from ... import content, phoneart
 from ..casedata import (
     CLASS_LABEL,
     ID_LABEL,
@@ -17,11 +26,13 @@ from ..casedata import (
 from ..icons import device_icon
 from ..models import Column, RecordModel, make_table
 from ..widgets import (
+    THEME,
     Card,
     Chip,
     ChipRow,
     Divider,
     EmptyState,
+    FlowLayout,
     IconBadge,
     KeyValueGrid,
     PageScroll,
@@ -34,9 +45,11 @@ from ..widgets import (
     copy_text,
     hbox,
     label,
-    tone_fn,
+    overline,
+    tool_button,
     vbox,
 )
+from .data import CategoryTile
 from .overview import device_summary
 
 STRENGTH_TONE = {"strong": ("ok", "ph.shield-check"), "link": ("accent", "ph.link"),
@@ -48,6 +61,61 @@ def _fit_table(view, rows: int) -> None:
     h = view.horizontalHeader().sizeHint().height() + rows * view.verticalHeader().defaultSectionSize() + 4
     view.setFixedHeight(h)
     view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+
+class PhoneView(QWidget):
+    """The phone, drawn, on a soft glow."""
+
+    def __init__(self, look: phoneart.PhoneLook):
+        super().__init__()
+        self.look = look
+        self.setFixedSize(250, 470)
+        THEME.on_change(self.update)
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        glow = QRadialGradient(QPointF(self.width() / 2, self.height() * 0.48), self.width() * 0.62)
+        c = QColor(THEME.palette.accent)
+        c.setAlpha(60 if THEME.palette.dark else 38)
+        glow.setColorAt(0.0, c)
+        c.setAlpha(0)
+        glow.setColorAt(1.0, c)
+        p.fillRect(self.rect(), glow)
+        font = THEME.fonts.ui.family() if THEME.fonts else ""
+        phoneart.paint_phone(p, QRectF(self.rect()).adjusted(4, 6, -4, -14), self.look, font_family=font)
+
+
+class IdentifierRow(QWidget):
+    """One identifier in full: what it is, its value, what it tells, and how strong it is."""
+
+    def __init__(self, i: dict, on_copy):
+        super().__init__()
+        dec = i.get("decoded") or {}
+        strength = i.get("strength") or "weak"
+        tone, icon_name = STRENGTH_TONE.get(strength, ("faint", "ph.circle"))
+        title = label(dec.get("label") or ID_LABEL.get(i["kind"], i["kind"]), "H3")
+        chip = Chip.status(STRENGTH_LABEL.get(strength, strength), tone, icon_name,
+                           {"strong": "Strong: can merge records into one device",
+                            "link": "Link: shown and compared, never merges records",
+                            "weak": "Weak: names and models; never merges records"}.get(strength, ""))
+        value = label(breakable(i.get("display") or i["value"]), "Mono", wrap=True, select=True, mono=True)
+        copy = tool_button("ph.copy", "Copy the value", lambda v=i["value"]: on_copy(v), 14)
+        lay = vbox(spacing=3, margins=(0, 10, 0, 10))
+        lay.addLayout(hbox(title, chip, "stretch", copy, spacing=8))
+        lay.addWidget(value)
+        if dec.get("summary"):
+            lay.addWidget(label(dec["summary"], None, wrap=True, select=True))
+        fields = [f"{k}: {v}" for k, v in dec.get("fields") or [] if k != "Value"]
+        if fields:
+            lay.addWidget(label(" · ".join(fields), "Small", wrap=True, select=True))
+        if dec.get("note"):
+            lay.addWidget(label(dec["note"], "Small", wrap=True, select=True))
+        rec = i.get("as_recorded") or []
+        src = ", ".join(i.get("sources") or [])
+        lay.addWidget(label(("As recorded: " + ", ".join(rec) + " · " if rec else "") + f"Found by {src}", "Faint",
+                            wrap=True, select=True))
+        self.setLayout(lay)
 
 
 class DeviceItem(QWidget):
@@ -184,10 +252,12 @@ class DevicesPage(QWidget):
                                                  "connected and where each fact came from."))
             return
         self.detail_lay.addSpacing(22)
-        self.detail_lay.addLayout(self._header(d))
-        self.detail_lay.addWidget(self._facts(d))
-        self.detail_lay.addWidget(self._channels(d))
+        self.detail_lay.addWidget(self._hero(d))
+        recovered = self._recovered(d)
+        if recovered is not None:
+            self.detail_lay.addWidget(recovered)
         self.detail_lay.addWidget(self._identifiers(d))
+        self.detail_lay.addWidget(self._channels(d))
         if d.get("merge_reasons"):
             self.detail_lay.addWidget(self._reasons(d))
         matches = self.case.matches_for(d["id"])
@@ -199,6 +269,78 @@ class DevicesPage(QWidget):
             self.detail_lay.addWidget(events)
         self.detail_lay.addStretch(1)
         self.scroll.verticalScrollBar().setValue(0)
+
+    def _items(self) -> dict[str, list[dict]]:
+        return self.window_.pages["data"].items
+
+    def _wallpaper(self, d: dict) -> Path | None:
+        from ...evidence import long_path
+
+        if not self.case or not self.case.outdir:
+            return None
+        for r in self._items().get("media", []):
+            if r["device"] == d["id"] and r.get("kind") == "Wallpaper" and r.get("file"):
+                p = Path(self.case.outdir) / "exports" / r["file"]
+                if long_path(p).is_file():
+                    return p
+        return None
+
+    def _hero(self, d: dict) -> Card:
+        """The drawn phone beside who and what it is (for phones); a compact header otherwise."""
+        is_phone = d.get("device_class") in (None, "phone", "tablet")
+        facts = content.phone_facts(d)
+        card = Card(padding=20)
+        info = vbox(spacing=10)
+        info.addWidget(overline(f"{CLASS_LABEL.get(d.get('device_class') or 'phone', 'Device')} · {d['id']}"))
+        info.addLayout(self._header(d))
+        kv = KeyValueGrid(columns=1)
+        kv.add("Operating system", facts["os"])
+        if facts["model"]:
+            kv.add("Model", facts["model"])
+        if facts["names"]:
+            kv.add("Name", ", ".join(facts["names"]))
+        if facts["numbers"]:
+            kv.add("Phone number", ", ".join(facts["numbers"]))
+        if facts["primary_label"]:
+            kv.add(facts["primary_label"], breakable(facts["primary_value"]), mono=True)
+            if facts["primary_summary"]:
+                kv.add("What it tells", facts["primary_summary"])
+        kv.add("First seen", f"{fmt_time(d.get('first_seen'))} UTC" if d.get("first_seen") else "no time recorded")
+        kv.add("Last seen", f"{fmt_time(d.get('last_seen'))} UTC" if d.get("last_seen") else "no time recorded")
+        kv.add("Computers", ", ".join(d.get("systems") or []) or "—")
+        kv.add("Local users", ", ".join(d.get("users") or []) or "—")
+        kv.add("Records", f"{d.get('observation_count', 0):,} from {len(d.get('identifiers') or [])} identifiers")
+        info.addWidget(kv)
+        info.addStretch(1)
+        if is_phone:
+            look = phoneart.look_for(d, self._wallpaper(d), caption=facts["model"] or facts["os"])
+            row = hbox(PhoneView(look), (info, 1), spacing=24)
+            row.setAlignment(Qt.AlignmentFlag.AlignTop)
+            card.body.addLayout(row)
+        else:
+            card.body.addLayout(info)
+        return card
+
+    def _recovered(self, d: dict) -> Card | None:
+        mine = {k: [r for r in v if r["device"] == d["id"]] for k, v in self._items().items()}
+        if not any(mine[k] for k in mine if k != "connections"):
+            return None
+        card = Card("Recovered from this phone", "Click a kind to see every item, with its source, on the "
+                                                  "Recovered data page.")
+        tiles = QWidget()
+        flow = FlowLayout(tiles, 10)  # wraps, so the page never grows wider than the window
+        for cat in content.CATEGORIES:
+            rows = mine.get(cat.key) or []
+            if not rows:
+                continue
+            tile = CategoryTile(cat.key, cat.title, cat.icon)
+            tile.setFixedWidth(168)
+            tile.set(len(rows), sum(1 for r in rows if r.get("status")), len(rows))
+            tile.setToolTip(f"Show this phone's {cat.title.lower()}")
+            tile.clicked.connect(lambda key, dev=d["id"]: self.window_.go("data", {"device": dev, "category": key}))
+            flow.addWidget(tile)
+        card.body.addWidget(tiles)
+        return card
 
     def _header(self, d: dict):
         confirmed = d.get("confirmed")
@@ -214,29 +356,23 @@ class DevicesPage(QWidget):
         if d.get("device_class"):
             chips.append(Chip(CLASS_LABEL.get(d["device_class"], d["device_class"])))
         title = label(d.get("label") or d["id"], "H1", wrap=True, select=True)
-        ident = label(d["id"], "Faint", select=True)
         actions = hbox(
-            button("Show in timeline", None, "ph.clock-counter-clockwise",
-                   lambda: self.window_.go("timeline", {"device": d["id"]})),
-            button("Copy ID", None, "ph.copy", lambda: copy_text(d["id"], self, f"Copied {d['id']}"),
-                   "Copy the device ID"),
-            spacing=8)
-        row = hbox(badge, (vbox(title, ChipRow(chips), ident, spacing=6), 1), actions, spacing=16)
+            button("Timeline", None, "ph.clock-counter-clockwise",
+                   lambda: self.window_.go("timeline", {"device": d["id"]}), "Show this device's records"),
+            button("Recovered data", None, "ph.database",
+                   lambda: self.window_.go("data", {"device": d["id"]}), "Show what was recovered from it"),
+            tool_button("ph.copy", "Copy the device record ID", lambda: copy_text(d["id"], self, f"Copied {d['id']}"),
+                        16),
+            "stretch", spacing=8)
+        is_phone = d.get("device_class") in (None, "phone", "tablet")
+        head = vbox(title, ChipRow(chips), spacing=8)
+        if is_phone:
+            col = vbox(head, actions, spacing=12)
+            return col
+        row = hbox(badge, (head, 1), actions, spacing=16)
         row.setAlignment(badge, Qt.AlignmentFlag.AlignTop)
         row.setAlignment(actions, Qt.AlignmentFlag.AlignTop)
         return row
-
-    def _facts(self, d: dict) -> Card:
-        card = Card(padding=16)
-        kv = KeyValueGrid(columns=2)
-        kv.add("First seen", f"{fmt_time(d.get('first_seen'))} UTC" if d.get("first_seen") else "—")
-        kv.add("Last seen", f"{fmt_time(d.get('last_seen'))} UTC" if d.get("last_seen") else "—")
-        kv.add("Computers", ", ".join(d.get("systems") or []) or "—")
-        kv.add("Local users", ", ".join(d.get("users") or []) or "—")
-        kv.add("Records", f"{d.get('observation_count', 0):,}")
-        kv.add("Identifiers", str(len(d.get("identifiers") or [])))
-        card.body.addWidget(kv)
-        return card
 
     def _channels(self, d: dict) -> Card:
         card = Card("Connections", "How this device reached the computers, and when.")
@@ -258,29 +394,15 @@ class DevicesPage(QWidget):
         return card
 
     def _identifiers(self, d: dict) -> Card:
-        card = Card("Identifiers", "Only strong identifiers merge records into one device; links and weak "
-                                   "identifiers are shown but never merge.")
-        rows = d.get("identifiers") or []
-        model = RecordModel([
-            Column("Type", lambda r: ID_LABEL.get(r["kind"], r["kind"]), 150),
-            Column("Value", lambda r: r["value"], None, mono=True, tooltip=True),
-            Column("Strength", lambda r: STRENGTH_LABEL.get(r["strength"], r["strength"]), 120,
-                   chip=lambda r: (STRENGTH_LABEL.get(r["strength"], r["strength"]),
-                                   tone_fn(STRENGTH_TONE.get(r["strength"], ("faint", ""))[0]),
-                                   STRENGTH_TONE.get(r["strength"], ("", "ph.circle"))[1])),
-            Column("Found by", lambda r: ", ".join(r.get("sources") or []), 230, muted=True, tooltip=True),
-        ])
-        model.set_rows(rows)
-        view = make_table(model)
-        view.setAlternatingRowColors(False)
-        _fit_table(view, len(rows))
-        view.doubleClicked.connect(lambda idx: copy_text(model.row(idx.row())["value"], self, "Copied the value"))
-        view.setToolTip("Double-click a row to copy its value")
-        card.body.addWidget(view)
-        as_recorded = [(i, i["as_recorded"]) for i in rows if i.get("as_recorded")]
-        if as_recorded:
-            card.body.addWidget(label("As recorded in the evidence: " + "; ".join(
-                f"{ID_LABEL.get(i['kind'], i['kind'])} {', '.join(v)}" for i, v in as_recorded), "Small", wrap=True))
+        card = Card("Identifiers", "Every identifier recorded for this device, in full, with what its format "
+                                   "tells. Only strong identifiers merge records into one device.")
+        order = content.ID_ORDER
+        rows = sorted(d.get("identifiers") or [],
+                      key=lambda i: order.index(i["kind"]) if i["kind"] in order else len(order))
+        for n, i in enumerate(rows):
+            if n:
+                card.body.addWidget(Divider())
+            card.body.addWidget(IdentifierRow(i, lambda v: copy_text(v, self, "Copied the value")))
         return card
 
     def _reasons(self, d: dict) -> Card:

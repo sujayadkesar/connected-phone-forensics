@@ -32,12 +32,15 @@ class Column:
     sort_key: Callable[[dict], Any] | None = None
     chip: Callable[[dict], tuple[str, ColorFn | None, str | None] | None] | None = None
     tooltip: bool = False             # show the full text on hover (for elided cells)
+    icon: Callable[[dict], tuple[str, str] | None] | None = None  # (icon name, palette role) before the text
+    tip: Callable[[dict], str | None] | None = None               # a tooltip of its own
 
 
 class RecordModel(QAbstractTableModel):
-    def __init__(self, columns: list[Column]):
+    def __init__(self, columns: list[Column], row_tint: Callable[[dict], str | None] | None = None):
         super().__init__()
         self.columns = columns
+        self.row_tint = row_tint  # palette role to tint a row with (e.g. "warn" for recovered items)
         self.rows: list[dict] = []
         self.visible: list[int] = []
         self._filter: Callable[[dict], bool] | None = None
@@ -103,9 +106,26 @@ class RecordModel(QAbstractTableModel):
             return c.chip(r) if c.chip else None
         if role == ROW_ROLE:
             return r
+        if role == Qt.ItemDataRole.ToolTipRole and c.tip:
+            return c.tip(r)
         if role == Qt.ItemDataRole.ToolTipRole and c.tooltip:
             text = c.text(r)
             return text if len(text) > 40 else None
+        if role == Qt.ItemDataRole.DecorationRole and c.icon:
+            spec = c.icon(r)
+            if spec:
+                from .icons import icon
+
+                return icon(spec[0], getattr(THEME.palette, spec[1]))
+            return None
+        if role == Qt.ItemDataRole.BackgroundRole and self.row_tint:
+            tone = self.row_tint(r)
+            if tone:
+                from .theme import mix
+
+                p = THEME.palette
+                return QColor(mix(p.surface, getattr(p, tone), 0.14))
+            return None
         if role == Qt.ItemDataRole.FontRole and c.mono:
             return _mono()
         if role == Qt.ItemDataRole.ForegroundRole and c.muted:
@@ -141,6 +161,20 @@ def _mono() -> QFont:
     return _MONO
 
 
+def _tint_delegate(parent):
+    """Paints the model's row tint (BackgroundRole), which style-sheet item rendering ignores."""
+    from PySide6.QtWidgets import QStyle, QStyledItemDelegate
+
+    class TintDelegate(QStyledItemDelegate):
+        def paint(self, painter, option, index) -> None:
+            tint = index.data(Qt.ItemDataRole.BackgroundRole)
+            if isinstance(tint, QColor) and not option.state & QStyle.StateFlag.State_Selected:
+                painter.fillRect(option.rect, tint)
+            super().paint(painter, option, index)
+
+    return TintDelegate(parent)
+
+
 def make_table(model: RecordModel, sortable: bool = True):
     """A QTableView set up the same way everywhere: row selection, chip cells, fixed column widths."""
     from PySide6.QtWidgets import QAbstractItemView, QHeaderView, QTableView
@@ -166,6 +200,8 @@ def make_table(model: RecordModel, sortable: bool = True):
     header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     header.setMinimumSectionSize(60)
     delegate = ChipDelegate(CHIP_ROLE, view)
+    if model.row_tint is not None:
+        view.setItemDelegate(_tint_delegate(view))
     stretch = None
     for i, c in enumerate(model.columns):
         if c.chip:
