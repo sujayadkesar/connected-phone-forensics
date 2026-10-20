@@ -81,3 +81,56 @@ def test_iphone_hotspot_networklist_and_dhcp_merge(tmp_path):
     lease = next(o for o in result.observations if o.event == "hotspot_dhcp_lease")
     assert "iphone_hotspot_subnet" in lease.data["signals"]
     assert any("not reported" in w.message for w in result.warnings)  # NETGEAR skipped, but said so
+
+
+def _profile(sw, guid, name, name_type, created, last=None, description=None, sig="0101SIG"):
+    key = f"{NL}\\Profiles\\{{{guid}}}"
+    sw.value(key, "ProfileName", name)
+    if description:
+        sw.value(key, "Description", description)
+    sw.value(key, "NameType", name_type)
+    sw.value(key, "DateCreated", _systemtime(created), REG_BINARY)
+    if last:
+        sw.value(key, "DateLastConnected", _systemtime(last), REG_BINARY)
+    sw.value(f"{NL}\\Signatures\\Unmanaged\\{sig}", "ProfileGuid", f"{{{guid}}}")
+    sw.value(f"{NL}\\Signatures\\Unmanaged\\{sig}", "DefaultGatewayMac", MAC, REG_BINARY)
+
+
+def test_one_iphone_under_several_names_and_a_cable(tmp_path):
+    # The same iPhone (one gateway address, the iPhone hotspot subnet) behind three Windows profiles:
+    # its hotspot under the phone's name, again after the phone was renamed (Windows adds " 3" to a
+    # name it has seen), and once by cable, which Windows calls "Local Area Connection".
+    from connected_phone_forensics.casedata import CaseData
+
+    _build(tmp_path / "C")
+    cfg = tmp_path / "C" / "Windows" / "System32" / "config"
+    sw = HiveBuilder()
+    _profile(sw, "AAAA0000-0000-0000-0000-000000000001", "Jane's iPhone", 71, datetime(2025, 7, 11, 9, 0),
+             datetime(2026, 10, 6, 17, 0))
+    _profile(sw, "CCCC0000-0000-0000-0000-000000000003", "BLUE HOME DR5-5g 3", 71, datetime(2026, 10, 17, 18, 0),
+             datetime(2026, 10, 17, 18, 30), description="BLUE HOME DR5-5g", sig="0103SIG")
+    _profile(sw, "DDDD0000-0000-0000-0000-000000000004", "Local Area Connection", 1, datetime(2026, 5, 13, 9, 39),
+             datetime(2026, 5, 13, 9, 39), sig="0104SIG")
+    (cfg / "SOFTWARE").write_bytes(sw.build())
+
+    result = scan(tmp_path, plugin_ids=["win_phone_hotspots"])
+    cable = [o for o in result.observations if (o.data or {}).get("profile_name") == "Local Area Connection"]
+    assert cable and all(o.channel.value == "usb_tethering" for o in cable)
+    assert all("cable or Bluetooth" in o.message for o in cable)
+    assert all(i.kind.value != "device_name" for o in cable for i in o.device_ids)  # Windows' name, not the phone's
+    devs = result.graph.devices
+    assert len(devs) == 1  # one gateway address: one phone
+    names = {i.value for i in devs[0].identifiers if i.kind.value == "device_name"}
+    assert names == {"Jane's iPhone", "BLUE HOME DR5-5g"}
+
+    case = CaseData.from_result(result)
+    [net] = case.hotspots
+    assert net["access_points"] == 1 and net["tethered"] == 1
+    assert net["names"] == ["Jane's iPhone", "BLUE HOME DR5-5g"]  # in the order they were first joined
+    rows = {s["name"]: s for s in net["sessions"]}
+    assert set(rows) == {"Jane's iPhone", "BLUE HOME DR5-5g", "Local Area Connection"}
+    assert rows["Local Area Connection"]["link"].startswith("cable or Bluetooth")
+    assert rows["BLUE HOME DR5-5g"]["first"].startswith("2026-10-17") and rows["BLUE HOME DR5-5g"]["profiles"] == \
+        "BLUE HOME DR5-5g 3"
+    assert rows["Jane's iPhone"]["dhcp"] == "phone 172.20.10.1 · computer 172.20.10.4"
+    assert net["likely_phone"] == "iPhone" and case.phones == []  # known only through its hotspot

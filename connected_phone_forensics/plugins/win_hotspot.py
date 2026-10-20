@@ -13,6 +13,13 @@ gateway 172.20.10.1, a strong sign the computer was tethered to an iPhone.
 Only networks with a phone signal (hotspot subnet, or a phone-like SSID) are
 reported; the count of other networks is noted in coverage.
 
+One phone can stand behind several profiles: an iPhone's hotspot takes the phone's
+name, so renaming the phone gives the same gateway a new network name, and the
+same gateway reached by cable or Bluetooth (USB tethering) gets a profile of its
+own, usually with a generic name such as "Local Area Connection" (NameType is not
+71, Wi-Fi). Such a profile is reported as tethering, and its generic name is not
+taken for the phone's name.
+
 NetworkList dates are local-time SYSTEMTIMEs; they are converted to UTC with
 the timezone recorded in the same image.
 """
@@ -38,7 +45,10 @@ from ._windows import (
 )
 
 NL = r"\Microsoft\Windows NT\CurrentVersion\NetworkList"
-_NAME_TYPES = {6: "wired", 23: "mobile_broadband", 71: "wireless"}
+# NameType is the network adapter's IANA ifType: 71 Wi-Fi, 6 Ethernet, 1 other (Apple's USB tethering
+# adapter), 23 PPP/VPN, 243 mobile broadband.
+_NAME_TYPES = {1: "other", 6: "wired", 23: "vpn", 71: "wireless", 243: "mobile_broadband"}
+WIFI = 71
 _IPHONE_NET = ipaddress.ip_network("172.20.10.0/28")
 _ANDROID_LEGACY_GW = ipaddress.ip_address("192.168.43.1")
 
@@ -200,7 +210,8 @@ class WindowsHotspots(Plugin):
             # Windows names a second profile for the same SSID "<SSID> 2"; the Description keeps the
             # network's own name, which is what the phone broadcast.
             description = reg_text(prof.get("Description"))
-            ssid = description if name_type == 71 and description else name
+            wifi = name_type == WIFI
+            ssid = description if wifi and description else name
             mac = gateways.get(prof.name.upper())
             has_sig, os_hint = ssid_phone_signal(ssid)
             lease = lease_by_mac.get(mac) if mac else None
@@ -209,11 +220,15 @@ class WindowsHotspots(Plugin):
                 skipped += 1
                 continue
             os_hint = os_hint or (lease["phone_os"] if lease else None)
-            ids = [ident(IdKind.DEVICE_NAME, ssid),
+            # A Wi-Fi network's name is what the phone broadcast (its own name, for an iPhone). A profile
+            # for the same gateway over a cable or Bluetooth carries a name Windows chose ("Local Area
+            # Connection"): it says nothing about the phone, so it is not one of the phone's names.
+            ids = [ident(IdKind.DEVICE_NAME, ssid) if wifi or has_sig else None,
                    ident(IdKind.APP_DEVICE_ID, f"wifi_ap_mac:{mac}") if mac else None]
             data = {
                 "profile_name": name, "description": description, "ssid": ssid,
                 "profile_guid": prof.name, "name_type": _NAME_TYPES.get(name_type, name_type),
+                "link": "Wi-Fi" if wifi else "cable or Bluetooth (USB tethering)",
                 "gateway_mac": mac, "signals": sorted(set(signals)),
                 "timezone": tz.describe() if tz else "unknown: local time shown as UTC",
             }
@@ -223,11 +238,16 @@ class WindowsHotspots(Plugin):
                 if local is None:
                     continue
                 ts = tz.to_utc(local) if tz else local
+                if wifi:
+                    message = (f"Connected to phone hotspot \"{ssid}\": {desc}"
+                               + (f" (Windows profile \"{name}\")" if name != ssid else ""))
+                else:
+                    message = (f"Connected through the phone by cable or Bluetooth (USB tethering), not Wi-Fi: "
+                               f"{desc} (Windows profile \"{name}\")")
                 ctx.emit(Observation(
                     artifact=self.id, event=event,
-                    message=f"Connected to phone hotspot \"{ssid}\": {desc}"
-                            + (f" (Windows profile \"{name}\")" if name != ssid else ""),
-                    channel=Channel.WIFI_HOTSPOT, timestamp=ts,
+                    message=message,
+                    channel=Channel.WIFI_HOTSPOT if wifi else Channel.USB_TETHERING, timestamp=ts,
                     timestamp_desc=f"{desc} (local time converted with evidence timezone)" if tz
                     else f"{desc} (local time, timezone unknown)",
                     provenance=ctx.prov(path, key_locator(hive_rel, prof, value)),

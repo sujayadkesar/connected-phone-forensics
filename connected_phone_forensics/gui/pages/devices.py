@@ -164,6 +164,7 @@ class DeviceItem(QWidget):
         self.setToolTip(f"{d['id']} · {d.get('observation_count', 0)} records")
 
 
+
 class HotspotItem(QWidget):
     """A hotspot network in the list: its name, how many access points, when last joined."""
 
@@ -172,9 +173,11 @@ class HotspotItem(QWidget):
         badge = ChannelBadge("ph.wifi-high", "wifi_hotspot", 36)
         name = label(f"“{net['ssid']}”", "H3")
         name.setMinimumWidth(10)
-        n = len(net["sessions"])
+        n = net["access_points"]
         likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "unknown phone")
-        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}", "Small")
+        more = len(net["names"])
+        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}"
+                    + (f" · {more} names" if more > 1 else ""), "Small")
         last = label(f"last joined {fmt_time(net['last'], False)} UTC" if net["last"] else "", "Faint")
         self.setLayout(hbox(badge, (vbox(name, sub, last, spacing=1), 1), spacing=11, margins=(10, 8, 12, 8)))
 
@@ -386,7 +389,7 @@ class DevicesPage(QWidget):
             self._show(None)
             return
         self.current = f"net:{net['ssid']}"
-        n = len(net["sessions"])
+        n = net["access_points"]
         likely = net["likely_phone"]
         os_name = {"ios": "iPhone (iOS)", "android": "Android"}.get(net["os"], "")
         hero = Card(padding=20)
@@ -399,6 +402,11 @@ class DevicesPage(QWidget):
                               "Inferred from the network name, which the phone's owner can change"))
         elif os_name:
             chips.append(Chip(os_name, None, "ph.apple-logo" if net["os"] == "ios" else "ph.android-logo"))
+        if len(net["names"]) > 1:
+            chips.append(Chip(f"{len(net['names'])} network names", None, "ph.text-aa",
+                              "The same access point was saved under several network names"))
+        if net["tethered"]:
+            chips.append(Chip.channel("usb_tethering", "also by cable or Bluetooth"))
         if net["randomised"]:
             chips.append(Chip.status(f"{net['randomised']} randomised", "warn", "ph.shuffle",
                                      "Locally administered addresses: a new one each time the hotspot is switched "
@@ -408,15 +416,19 @@ class DevicesPage(QWidget):
         kv.add("First joined", f"{fmt_time(net['first'])} UTC" if net["first"] else "no time recorded")
         kv.add("Last joined", f"{fmt_time(net['last'])} UTC" if net["last"] else "no time recorded")
         kv.add("Computers", ", ".join(net["computers"]) or "—")
-        names = sorted({s["names"] for s in net["sessions"] if s["names"]})
-        if names and names != [net["ssid"]]:
-            kv.add("Network names", "; ".join(names))
+        if net["names"] and net["names"] != [net["ssid"]]:
+            kv.add("Network names", ", ".join(f"“{x}”" for x in net["names"]))
         info.addWidget(kv)
-        info.addWidget(label(
-            "A phone known only as a hotspot: the computer saved the network's name and the address of the access "
-            "point (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random address each "
-            "time it is switched on, so one phone appears as several access points with the same name. The same "
-            "name does not prove the same phone.", "Small", wrap=True))
+        text = ("A phone known only as a hotspot: the computer saved the network's name and the address of the "
+                "access point (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random "
+                "address each time it is switched on, so one phone appears as several access points with the same "
+                "name. The same name does not prove the same phone.")
+        if len(net["names"]) > 1 and net["access_points"] == 1:
+            text += " " + content.HOTSPOT_RENAMED
+        if net["tethered"]:
+            text += (" The computer also reached this phone by cable or Bluetooth (USB tethering): Windows saved "
+                     "that connection under a name of its own.")
+        info.addWidget(label(text, "Small", wrap=True))
         info.addStretch(1)
         row = hbox(HotspotArt(), (info, 1), spacing=24)
         row.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -424,13 +436,16 @@ class DevicesPage(QWidget):
         self.detail_lay.addSpacing(22)
         self.detail_lay.addWidget(hero)
 
-        sessions = Card("Access points", "One row per access point address, with when the computer joined it.")
+        sessions = Card("Connections", "One row per network the computer saved for this hotspot, with its "
+                                       "access point address and when the computer joined it.")
         model = RecordModel([
-            Column("Access point (BSSID)", lambda s: s["bssid"] or "—", 170, mono=True),
-            Column("Maker", lambda s: s["maker"], 190, muted=True, tooltip=True),
-            Column("First joined (UTC)", lambda s: fmt_time(s["first"]), 165, mono=True,
+            Column("Network name", lambda s: s["name"], 180, tooltip=True,
+                   icon=lambda s: ("ph.wifi-high", "muted") if s["link"] == "Wi-Fi" else ("mdi6.usb-port", "warn"),
+                   tip=lambda s: f"Joined by {s['link']}"),
+            Column("Access point (BSSID)", lambda s: s["bssid"] or "—", 160, mono=True, tip=lambda s: s["maker"]),
+            Column("First joined (UTC)", lambda s: fmt_time(s["first"]), 158, mono=True,
                    sort_key=lambda s: s["first"] or ""),
-            Column("Last joined (UTC)", lambda s: fmt_time(s["last"]), 165, mono=True,
+            Column("Last joined (UTC)", lambda s: fmt_time(s["last"]), 158, mono=True,
                    sort_key=lambda s: s["last"] or ""),
             Column("Windows profile · addresses", lambda s: " · ".join(x for x in (s["profiles"], s["dhcp"]) if x),
                    None, tooltip=True),
@@ -451,7 +466,8 @@ class DevicesPage(QWidget):
         from ... import geo
 
         card = Card("Where was it?", "An optional online lookup in Apple's Wi-Fi location service.")
-        fixed = [s["bssid"] for s in net["sessions"] if s["bssid"] and not geo.is_randomised(s["bssid"])]
+        fixed = sorted({m for s in net["sessions"] for m in s["bssid"].split(", ")
+                        if m and not geo.is_randomised(m)})
         if not fixed:
             card.body.addWidget(label(
                 "Every address here is randomised, so no location service records it: nothing can be looked up, "

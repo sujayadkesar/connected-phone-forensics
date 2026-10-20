@@ -562,13 +562,19 @@ def _hotspot_section(d: Doc, hotspots: list[dict]) -> None:
               "Phones the computers knew only as Wi-Fi hotspots: a network name and the access point "
               "address (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random "
               "address each time it is switched on, so one phone's hotspot appears as several access points "
-              "with the same name. The same name does not prove the same phone.", keep=150)
+              "with the same name; a phone that was renamed shows as one access point under several names. The "
+              "same name does not prove the same phone.", keep=150)
     for net in hotspots:
-        n = len(net["sessions"])
+        n = net["access_points"]
         likely = net["likely_phone"]
         os_name = {"ios": "iPhone (iOS)", "android": "Android"}.get(net["os"], "")
         head = f"“{net['ssid']}”"
         bits = [f"{_plural(n, 'access point')}"]
+        if len(net["names"]) > 1:
+            bits.append("also named " + ", ".join(f"“{x}”" for x in net["names"] if x != net["ssid"])
+                        + (" (the phone was renamed)" if n == 1 else ""))
+        if net["tethered"]:
+            bits.append("also reached by cable or Bluetooth")
         if likely:
             bits.append(f"likely {likely} (from the network name)")
         elif os_name:
@@ -585,15 +591,15 @@ def _hotspot_section(d: Doc, hotspots: list[dict]) -> None:
         rows = []
         for s in net["sessions"]:
             rows.append([
+                Cell.of((s["name"], "small"), (s["link"], "tiny")),
                 Cell.of((s["bssid"] or "—", "mono"), (s["maker"], "tiny")),
                 Cell.of((_fmt(s["first"]), "small")),
                 Cell.of((_fmt(s["last"]), "small")),
-                Cell.of((s["profiles"] or s["names"], "small"), (s["dhcp"], "tiny")),
-                Cell.of((s["computers"] or "—", "small")),
+                Cell.of((s["profiles"] or "—", "small"), (s["dhcp"], "tiny")),
             ])
-        d.table([("Access point (BSSID)", 1.9, "left"), ("First connected (UTC)", 1.45, "left"),
-                 ("Last connected (UTC)", 1.45, "left"), ("Windows profile · addresses", 2.2, "left"),
-                 ("Computer", 1.1, "left")], rows)
+        d.table([("Network name · joined by", 1.75, "left"), ("Access point (BSSID)", 1.75, "left"),
+                 ("First connected (UTC)", 1.35, "left"), ("Last connected (UTC)", 1.35, "left"),
+                 ("Windows profile · addresses", 1.9, "left")], rows)
 
 
 def _system_text(s: dict) -> str:

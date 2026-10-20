@@ -64,10 +64,12 @@ class HotspotRow(Card):
     def __init__(self, net: dict, on_open):
         super().__init__(padding=12, spacing=4, clickable=True)
         badge = IconBadge("ph.wifi-high", "warn", 34)
-        n = len(net["sessions"])
+        n = net["access_points"]
         likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "unknown phone")
         name = label(f"“{net['ssid']}”", "H3")
-        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}", "Small")
+        more = len(net["names"])
+        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}" + (f" · {more} names" if more > 1 else ""),
+                    "Small")
         last = vbox(label("Last joined", "Small"), label(fmt_time(net.get("last"), False), "Mono", mono=True),
                     "stretch", spacing=1)
         self.body.addLayout(hbox(badge, (vbox(name, sub, spacing=2), 1), last, spacing=12))
@@ -184,7 +186,7 @@ class OverviewPage(QWidget):
         confirmed = sum(1 for d in phones if d.get("confirmed"))
         self.t_phones.set(f"{len(phones)}", f"{confirmed} confirmed by a strong identifier" if phones else
                           "None found")
-        points = sum(len(n["sessions"]) for n in nets)
+        points = sum(n["access_points"] for n in nets)
         self.t_hotspots.set(f"{len(nets)}", f"networks, {points} access point{'s' if points != 1 else ''}" if nets
                             else "None joined")
         self.t_other.set(f"{len(others)}", "Headsets, computers, peripherals" if others else "None found")

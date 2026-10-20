@@ -13,6 +13,7 @@ import re
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from .casedata import CHANNEL_LABEL
@@ -413,10 +414,17 @@ def phone_facts(device: dict) -> dict[str, Any]:
     }
 
 
+GATEWAY_CHANNELS = {"wifi_hotspot", "usb_tethering"}
+HOTSPOT_RENAMED = ("One access point under several names: an iPhone's hotspot takes the phone's name, so the phone "
+                   "was renamed (another phone using the same address is very unlikely).")
+_FIRST_EVENTS = ("hotspot_first_connected", "hotspot_added")
+
+
 def is_hotspot_only(device: dict) -> bool:
-    """A phone the computers knew only as a Wi-Fi hotspot (a network name and its BSSID)."""
+    """A phone the computers knew only as the gateway of a network they joined: its Wi-Fi hotspot (a
+    network name and the access point's address), perhaps also reached by cable or Bluetooth."""
     channels = {c.get("channel") for c in device.get("channels") or []}
-    return channels == {"wifi_hotspot"}
+    return "wifi_hotspot" in channels and channels <= GATEWAY_CHANNELS
 
 
 def _mac_text(value: str) -> str:
@@ -424,15 +432,58 @@ def _mac_text(value: str) -> str:
     return ":".join(hexa[i:i + 2] for i in range(0, 12, 2)) if len(hexa) == 12 else str(value)
 
 
-def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
-    """Phones seen only as hotspots, grouped by network name (SSID).
+def _randomised(mac: str) -> bool:
+    """A locally administered (randomised) address: the second-lowest bit of its first octet."""
+    try:
+        return bool(int(mac[:2], 16) & 0x02)
+    except ValueError:
+        return False
 
-    Android (since 11) and iOS give a hotspot a new random BSSID each time it is switched on, so one
-    phone's hotspot appears as several access points with the same name. Each access point stays
-    one session here, with its own times; the network groups them. A shared name does not prove
-    one phone: two phones can use the same name.
+
+def _spaced(text) -> str:
+    """A network name with its spacing tidied: a DHCP hint can keep a trailing space the profile does not."""
+    return " ".join(str(text or "").split())
+
+
+def _hours_apart(a: str | None, b: str | None) -> float:
+    try:
+        return abs((datetime.fromisoformat(str(a)) - datetime.fromisoformat(str(b))).total_seconds()) / 3600
+    except (TypeError, ValueError):
+        return float("inf")
+
+
+def _lease_text(lease: dict) -> str:
+    phone = lease.get("gateway_ip") or lease.get("router_ip")
+    computer = lease.get("dhcp_ip") or lease.get("ip")
+    return " · ".join(x for x in (f"phone {phone}" if phone else "", f"computer {computer}" if computer else "") if x)
+
+
+def _likely_phone(names: list[str]) -> tuple[str, tuple[str, str | None] | None]:
+    """What the network names say about the phone: the first name that names one."""
+    from .decode import phone_in_name
+
+    for name in names:
+        hit = phone_in_name(name)
+        if hit:
+            brand, model = hit
+            likely = model or ("iPhone" if brand == "Apple" else "Android phone" if brand == "Android"
+                               else f"{brand} phone")
+            return likely, hit
+    return "", None
+
+
+def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
+    """Phones known only as hotspots, grouped by network, with one row per connection.
+
+    Android (since 11) and recent iPhones give a hotspot a new random BSSID each time it is switched
+    on, so one phone's hotspot appears as several access points with the same name. The other way
+    round, one access point can carry several names: an iPhone's hotspot takes the phone's name, so
+    renaming the phone renames the network, and the same phone reached by cable or Bluetooth gets a
+    Windows profile of its own. Each saved network (a Windows profile, a Mac's known network) or
+    DHCP lease without one is a row with its own name, link and times; the device's access points
+    make the network. A shared name does not prove one phone: two phones can use the same name.
     """
-    from .decode import mac_vendor, phone_in_name
+    from .decode import mac_vendor
 
     hotspot_devs = {d["id"]: d for d in devices if is_hotspot_only(d)}
     if not hotspot_devs:
@@ -444,36 +495,69 @@ def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
     networks: dict[str, dict] = {}
     for dev_id, dev in hotspot_devs.items():
         recs = by_dev.get(dev_id, [])
-        ssids = Counter(str(x).strip() for r in recs for x in [(r.get("data") or {}).get("ssid")
-                                                              or (r.get("data") or {}).get("description")] if x)
-        # The device's own name (the most phone-like of its SSIDs) names the network.
-        ssid = dev.get("label") or (ssids.most_common(1)[0][0] if ssids else dev_id)
-        bssids = sorted({i.get("value", "").split(":", 1)[-1] for i in dev.get("identifiers") or []
-                         if str(i.get("value", "")).startswith("wifi_ap_mac:")})
-        times = sorted(r["datetime"] for r in recs if r.get("datetime"))
-        first = min((r["datetime"] for r in recs if r.get("datetime") and "first" in r.get("event", "")
-                     or r.get("event") == "hotspot_added" and r.get("datetime")), default=times[0] if times else None)
-        dhcp = next(((r.get("data") or {}) for r in recs if r.get("event") == "hotspot_dhcp_lease"), {})
-        profiles = sorted({str((r.get("data") or {}).get("profile_name")) for r in recs
-                           if (r.get("data") or {}).get("profile_name")})
+        dev_bssids = sorted({i.get("value", "").split(":", 1)[-1] for i in dev.get("identifiers") or []
+                             if str(i.get("value", "")).startswith("wifi_ap_mac:")})
+        groups: dict[str, list[dict]] = defaultdict(list)
+        leases: list[dict] = []
+        for r in recs:
+            data = r.get("data") or {}
+            if r.get("event") == "hotspot_dhcp_lease":
+                leases.append(r)
+            else:
+                groups[str(data.get("profile_guid") or data.get("ssid") or data.get("description") or "")].append(r)
+        rows = []
+        for group in groups.values():
+            data = group[0].get("data") or {}
+            times = sorted(r["datetime"] for r in group if r.get("datetime"))
+            firsts = sorted(r["datetime"] for r in group if r.get("datetime") and r.get("event") in _FIRST_EVENTS)
+            macs = [data["gateway_mac"]] if data.get("gateway_mac") else list(data.get("bssids") or [])
+            rows.append({
+                "name": _spaced(data.get("ssid") or data.get("description") or data.get("profile_name")),
+                "link": data.get("link") or "Wi-Fi", "macs": macs,
+                "first": (firsts or times or [None])[0], "last": times[-1] if times else None,
+                "profiles": ", ".join(sorted({str(r["data"]["profile_name"]) for r in group
+                                              if (r.get("data") or {}).get("profile_name")})),
+                "dhcp": "", "records": group,
+            })
+        unplaced = []
+        for lease in leases:
+            # A lease belongs to the connection of its network name, or, when Windows kept no name with it, to
+            # the Wi-Fi connection last joined nearest the lease (it is taken when the computer joins).
+            data = lease.get("data") or {}
+            name = _spaced(data.get("ssid"))
+            same = [x for x in rows if x["name"] == name] if name else [x for x in rows if x["link"] == "Wi-Fi"]
+            row = min(same, key=lambda x: _hours_apart(x["last"], lease.get("datetime")), default=None)
+            if row is not None:
+                row["dhcp"] = row["dhcp"] or _lease_text(data)
+                row["records"].append(lease)
+                continue
+            unplaced.append(lease)
+        for lease in unplaced:
+            data = lease.get("data") or {}
+            mac = data.get("gateway_mac") or data.get("router_mac")
+            rows.append({"name": _spaced(data.get("ssid")), "link": "Wi-Fi", "macs": [mac] if mac else [],
+                         "first": lease.get("datetime"), "last": lease.get("datetime"), "profiles": "",
+                         "dhcp": _lease_text(data), "records": [lease]})
+        if not rows:
+            rows.append({"name": "", "link": "Wi-Fi", "macs": dev_bssids, "first": None, "last": None,
+                         "profiles": "", "dhcp": "", "records": []})
+        wifi_names = Counter(x["name"] for x in rows if x["name"] and x["link"] == "Wi-Fi")
+        # The device's own name (the most phone-like of its names) names the network.
+        ssid = dev.get("label") or (wifi_names.most_common(1)[0][0] if wifi_names else dev_id)
         sessions = []
-        for b in bssids or [""]:
-            mac = _mac_text(b) if b else ""
-            randomised = bool(mac) and bool(int(mac[:2], 16) & 0x02)
+        for x in rows:
+            macs = [_mac_text(m) for m in x["macs"] if m] or [_mac_text(b) for b in dev_bssids]
+            mac = ", ".join(macs)
+            randomised = bool(macs) and all(_randomised(m) for m in macs)
             sessions.append({
                 "device": dev_id, "bssid": mac, "randomised": randomised,
-                "maker": "" if not mac else ("randomised (no maker)" if randomised
-                                              else (mac_vendor(mac) or "unknown maker")),
-                "first": first, "last": times[-1] if times else None,
-                "names": ", ".join(sorted(ssids)) if len(ssids) > 1 else ssid,
-                "profiles": ", ".join(profiles),
-                "dhcp": " · ".join(x for x in (f"phone {dhcp.get('gateway_ip') or dhcp.get('router_ip')}"
-                                               if dhcp.get("gateway_ip") or dhcp.get("router_ip") else "",
-                                               f"computer {dhcp.get('dhcp_ip') or dhcp.get('ip')}"
-                                               if dhcp.get("dhcp_ip") or dhcp.get("ip") else "") if x),
+                "maker": "" if not macs else ("randomised (no maker)" if randomised
+                                              else ", ".join(mac_vendor(m) or "unknown maker" for m in macs)),
+                "name": x["name"] or ssid, "names": x["name"] or ssid, "link": x["link"],
+                "first": x["first"], "last": x["last"], "profiles": x["profiles"], "dhcp": x["dhcp"],
                 "computers": ", ".join(dev.get("systems") or []), "os": dev.get("phone_os") or "",
-                "records": [r["_index"] for r in recs],
-                "sources": sorted({r.get("source_path") or "" for r in recs} - {""}),
+                "records": sorted(r["_index"] for r in x["records"]),
+                "sources": sorted({r.get("source_path") or "" for r in x["records"]} - {""}),
             })
         key = " ".join(ssid.lower().split())
         net = networks.setdefault(key, {"ssid": ssid, "sessions": [], "devices": []})
@@ -481,25 +565,23 @@ def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
         net["devices"].append(dev_id)
     out = []
     for net in networks.values():
-        sessions = sorted(net["sessions"], key=lambda s: (s["first"] or s["last"] or "", s["bssid"]))
+        sessions = sorted(net["sessions"], key=lambda s: (s["first"] or s["last"] or "", s["bssid"], s["name"]))
         firsts = [s["first"] for s in sessions if s["first"]]
         lasts = [s["last"] for s in sessions if s["last"]]
         oses = Counter(s["os"] for s in sessions if s["os"])
-        hit = phone_in_name(net["ssid"])
-        likely = ""
-        if hit:
-            brand, model = hit
-            likely = model or (f"{brand} phone" if brand not in ("Android",) else "Android phone")
-            if brand == "Apple" and not model:
-                likely = "iPhone"
+        names = list(dict.fromkeys(s["name"] for s in sessions if s["link"] == "Wi-Fi" and s["name"]))
+        likely, hit = _likely_phone([net["ssid"], *names])
         os_name = oses.most_common(1)[0][0] if oses else (
             "ios" if hit and hit[0] == "Apple" else "android" if hit else "")
+        points = {m for s in sessions for m in s["bssid"].split(", ") if m}
         out.append({
             "ssid": net["ssid"], "sessions": sessions, "devices": net["devices"],
             "first": min(firsts) if firsts else None, "last": max(lasts) if lasts else None,
-            "likely_phone": likely, "os": os_name,
-            "randomised": sum(1 for s in sessions if s["randomised"]),
+            "likely_phone": likely, "os": os_name, "names": names,
+            "access_points": len(points) or 1,
+            "randomised": sum(1 for m in points if _randomised(m)),
+            "tethered": sum(1 for s in sessions if s["link"] != "Wi-Fi"),
             "computers": sorted({c for s in sessions for c in s["computers"].split(", ") if c}),
         })
-    out.sort(key=lambda n: (-(len(n["sessions"])), n["ssid"].lower()))
+    out.sort(key=lambda n: (-n["access_points"], -len(n["sessions"]), n["ssid"].lower()))
     return out

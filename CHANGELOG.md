@@ -6,6 +6,25 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-20
+
+### Changed
+
+- A hotspot network now lists one row per connection (each Windows profile, or Mac known network)
+  with its own name, how it was joined (Wi-Fi, or cable or Bluetooth) and its own times, instead
+  of one row per access point. One access point saved under several names (an iPhone's hotspot
+  takes the phone's name, so renaming the phone renames the network) shows those names and
+  explains them, in the app, the PDF summary, the workbook and report.html.
+
+### Fixed
+
+- A network Windows reached through a phone by cable or Bluetooth (USB tethering; NameType other
+  than Wi-Fi) was reported as a hotspot, and its generic Windows name ("Local Area Connection")
+  was taken for one of the phone's names. It is now reported as USB tethering, and the name is not
+  attached to the phone.
+- A DHCP lease whose network name Windows kept with a trailing space, or kept no name with, became
+  a row of its own; it is now attached to the connection it belongs to.
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
@@ -274,7 +293,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.1
 [0.3.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.0
 [0.2.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.2.0
 [0.1.3]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.3
