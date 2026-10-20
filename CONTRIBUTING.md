@@ -70,6 +70,12 @@ class MacExample(Plugin):
 
 Drop the module into `connected_phone_forensics/plugins/`; it is discovered automatically.
 
+`paths` must list every file the parser reads: collection targets (`cpf targets`) and live
+acquisition (`cpf live`) copy exactly those files, with their SQLite and registry journal files.
+If the parser also needs something a file pattern cannot name, such as the names of sub-folders it
+lists, declare it in `acquire` (for example `acquire = ["Users/*/AppData/Local/kdeconnect/**"]`,
+where a trailing `**` copies the whole folder, empty sub-folders included).
+
 ## Validation levels
 
 Each parser declares how far it has been checked. The level is printed in

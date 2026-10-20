@@ -78,12 +78,36 @@ the examiner. Nothing is merged on those heuristics; an examiner can
 record a conclusion with `--assume-same`, which appears as an explicit
 merge reason and in the manifest.
 
+Identifiers are decoded in `decode.py` from their own structure and bundled
+public tables: the chip and ECID in a post-2018 iPhone UDID, the check digit
+and type allocation code of an IMEI, the maker of a MAC address (IEEE
+registry, `data/oui.tsv.gz`) or that it is randomised, the country of a phone
+number or SIM, the format of an Apple serial, the marketing name of an Apple
+model identifier. `devices.json` carries each identifier's decoded meaning.
+
+## Recovered data (`connected_phone_forensics/content.py`)
+
+Sorts the records into messages, calls, contacts, photos and files,
+notifications, apps and connection records per phone, resolving contact names
+from the phone's own address book and marking records recovered after
+deletion. It works on the plain records of `observations.jsonl`, so the app's
+Recovered data page, the workbook and the PDF summary show the same rows for a
+fresh scan or a reopened case; each item keeps its source file, locator and
+the index of its record.
+
 ## Outputs (`connected_phone_forensics/output/`)
 
 * `report.html`: a single offline file. Device cards and coverage are
   rendered statically. The timeline is column-encoded JSON rendered by a
   small inline script, capped at 100,000 rows with an explicit banner when
   truncated.
+* `summary.pdf` (`pdf.py`): drawn with Qt's PDF writer (`QPdfWriter`), so text
+  is selectable, any script is shaped with font fallback, and the logo and
+  the phone drawings (`phoneart.py`, shared with the app) are vector
+  graphics. Pages are laid out twice: once to count them, once to draw
+  "page X of Y".
+* `workbook.xlsx` (`excel.py`, openpyxl): every block is an Excel table;
+  evidence text is always stored as text, never as a formula.
 * `timeline.jsonl` / `timeline.csv`: Timesketch-compatible (`message`,
   `datetime`, `timestamp_desc`).
 * `observations.jsonl`, `devices.json`, `coverage.csv`.
@@ -103,16 +127,39 @@ Callers get one-line `progress` messages and structured `on_event` events
 stop a scan with a `cancel` event (`ScanCancelled` is raised once the
 running parsers finish; nothing is written).
 
+## Live acquisition (`connected_phone_forensics/live/`)
+
+`cpf live` and the app's *This computer (live)* mode, Windows only, as
+administrator. `winapi.py` wraps the Windows calls (ctypes): enabling
+`SeBackupPrivilege`, `RegSaveKeyEx` for the hives Windows keeps locked,
+`CreateFile` with backup semantics to read files and list folders whatever
+their ACL, `SetFileTime` to keep the original times. `acquire.py` expands every
+Windows parser's declared paths (`paths` and `acquire`) on the live system,
+copies the files with their journal files while hashing them, saves the hives
+of signed-in users through `HKEY_USERS`, and writes `acquisition.json`,
+`acquisition.sha256` and `acquisition.log`. The copy forms a normal evidence
+tree that `scan()` then reads. The output must be on another drive than the
+system drive, and the scan's temporary copies are kept in the output folder.
+Tests run the acquirer against a fake computer (the demo laptop with locked
+hives); a real acquisition test runs where the tests have administrator rights
+(GitHub's Windows runners).
+
 ## Desktop app (`connected_phone_forensics/gui/`)
 
-PySide6, installed with the package (entry point `cpf-gui`). The command line never imports Qt.
+PySide6, installed with the package (entry point `cpf-gui`). The command line uses Qt only to draw
+the PDF summary.
 
 * `jobs.py`: scans, case loading and evidence previews run on Qt's thread
   pool; results come back as signals on the UI thread.
-* `casedata.py`: the GUI works on the same records the output folder holds
-  (`devices.json`, `observations.jsonl`, `coverage.csv`, `manifest.json`),
-  built either from a finished `ScanResult` or by reading a saved folder, so
-  a reopened case looks exactly like a fresh one.
+* `casedata.py` (package level, shared with the report writers): the GUI works
+  on the same records the output folder holds (`devices.json`,
+  `observations.jsonl`, `coverage.csv`, `manifest.json`), built either from a
+  finished `ScanResult` or by reading a saved folder, so a reopened case looks
+  exactly like a fresh one.
+* `portable.py`: when the packaged app runs from another drive than the system
+  drive (or next to `portable.txt`), settings go to `cpf-settings.ini` beside
+  it and folder dialogs are Qt's, so nothing is added to the examined user's
+  registry.
 * `models.py`: table models filter and sort a list of row indexes in plain
   Python rather than through `QSortFilterProxyModel`, so 100,000-record
   timelines filter in about a tenth of a second and only visible rows are
@@ -121,22 +168,27 @@ PySide6, installed with the package (entry point `cpf-gui`). The command line ne
   when they paint, so switching theme needs no rebuild. Connection colours
   are a colour-blind-checked categorical palette and always sit next to a
   text label.
-* `pages/`: New scan, scan progress, Overview, Devices, Timeline, Coverage,
-  Issues.
+* `pages/`: New scan (an evidence folder or this computer, live), scan
+  progress, Overview, Devices (with the drawn phone), Recovered data,
+  Timeline, Coverage, Issues.
 
 ## Packaging and releases (`packaging/`, `.github/workflows/release.yml`)
 
 * `packaging/build.py` builds two single-file Windows executables with
-  PyInstaller: the desktop app (no console) and the `cpf` command line.
-  Parsers are discovered at run time, so their package is collected
-  explicitly; Qt modules the app does not use are left out.
-* `packaging/smoke_test.py` runs the built executables: the CLI must list
-  every parser and scan the demo case; the desktop app runs the demo case
+  PyInstaller (the desktop app, without a console, and the `cpf` command
+  line) and a portable ZIP holding both in one folder that runs in place
+  (from a spec with two executables sharing their libraries). Parsers are
+  discovered at run time, so their package is collected explicitly, as are
+  the package's data files; Qt modules the tool does not use are left out.
+* `packaging/smoke_test.py` runs the built executables, single-file and
+  portable: the CLI must list every parser and scan the demo case into a
+  report, PDF summary and workbook; the desktop app runs the demo case
   through its own window off screen (`--smoke-test`).
 * Pushing a tag `vX.Y.Z` runs the tests, builds and smoke-tests the
   executables on Windows, builds the wheel and source archive, and publishes
   a GitHub release with SHA-256 checksums and the CHANGELOG section as notes.
   Tags with a suffix (`v0.2.0-rc1`) become pre-releases.
-* `scripts/make_brand_assets.py` renders the logo and `packaging/app.ico`
-  from the app's own drawing code; `scripts/take_screenshots.py` regenerates
-  the README screenshots from the demo case.
+* `scripts/make_brand_assets.py` turns the logo kit (`docs/brand/`) into the
+  app's SVG assets (flattened for Qt's SVG renderer), `cpf.ico` and the README
+  images; `scripts/take_screenshots.py` regenerates the README screenshots
+  from the demo case.

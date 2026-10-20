@@ -33,7 +33,8 @@ def main() -> int:
 | File | What it is |
 |---|---|
 | `ConnectedPhoneForensics-{version}-windows-x64.exe` | **Desktop app** for Windows 10/11. Download and run; nothing to install. |
-| `cpf-{version}-windows-x64.exe` | Command-line tool for Windows (`cpf scan`, `cpf demo`, ...). |
+| `cpf-{version}-windows-x64.exe` | Command-line tool for Windows (`cpf scan`, `cpf live`, `cpf demo`, ...). |
+| `ConnectedPhoneForensics-{version}-windows-x64-portable.zip` | Both programs in one folder, **for a USB drive and live acquisition**: runs in place (nothing unpacked to the examined computer's temp folder) and keeps its settings next to it. |
 | `connected_phone_forensics-{version}-py3-none-any.whl` | Python package (the same as `pip install connected-phone-forensics`) for Windows, macOS and Linux. |
 | `connected_phone_forensics-{version}.tar.gz` | Source archive. |
 

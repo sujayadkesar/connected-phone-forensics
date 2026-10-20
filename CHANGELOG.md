@@ -6,6 +6,67 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
+### Added
+
+- **Live acquisition** of the Windows computer the tool runs on (`cpf live`, and *This computer
+  (live)* on the app's New scan page), for examining a computer on site. As administrator, the
+  registry hives Windows keeps locked (SYSTEM, SOFTWARE, the NTUSER.DAT of signed-in users) are
+  saved through the registry API (RegSaveKeyEx, as `reg save` does); every other file the parsers
+  read is copied with the backup privilege (so folder permissions cannot hide it), hashed while it
+  is read and given its original times. The copy is then scanned like any collection.
+  `acquisition.json`, `acquisition.sha256` and a timestamped `acquisition.log` record every item.
+  The output must be on another drive than the one examined (a USB drive or external disk):
+  writing to the examined drive would overwrite free space that may hold deleted evidence, so it
+  is refused unless explicitly allowed, and then recorded. The app can restart itself as
+  administrator, and suggests a folder on the drive it runs from. Scanning the running system's
+  drive as a plain folder now explains why that misses evidence and offers live acquisition.
+- **Portable build** (`…-portable.zip`): both programs in one folder that runs in place from a USB
+  drive, so nothing is unpacked to the examined computer's temporary folder. In portable mode the
+  app keeps its settings next to it and uses Qt's own folder dialogs, so nothing is added to the
+  examined user's registry (Windows' dialogs record folders in the user's recently-used lists).
+- **Recovered data** page: messages, calls, contacts, photos and files, notifications, apps and
+  connection records per phone, with tiles that count each kind for the phone, connection,
+  search and *deleted, recovered only* filters chosen; a sortable table (or a photo grid with
+  thumbnails); the selected item in full with a preview, its source file, record and SHA-256 and a
+  link to the timeline; and export of the rows shown to Excel or CSV. Contact names are filled in
+  from the phone's own address book.
+- **PDF summary** (`summary.pdf`, written by every scan): the case at a glance, every phone in one
+  table and the computers examined, then a page per phone with a drawing of it, its identity, its
+  identifiers decoded, how it connected and what was recovered, and a page on method and limits.
+  Text stays selectable and names in any script (for example Hindi or Cyrillic) are shaped
+  properly.
+- **Excel workbook** (`workbook.xlsx`, written by every scan): a summary sheet (case, recovered data
+  at a glance, the phones with links to their sheets, the computers) and one sheet per phone with
+  its identifiers, connections and a table per kind of recovered data. Every block is an Excel
+  table with sort and filter buttons; times are real date-times; evidence text that starts with
+  `=` stays text.
+- The device page draws the phone as it most likely looks (Dynamic Island, notch or Home button
+  from its model or the chip in its UDID; a punch-hole camera for Android), with the wallpaper
+  recovered from Phone Link on its screen, beside its identity and counts of what was recovered
+  from it.
+- Identifiers are decoded and shown in full everywhere: an iPhone UDID names its chip and model
+  family and its ECID, an IMEI its check digit and model code, a MAC address its maker (or that it
+  is randomised), a SIM or phone number its country, an Apple serial its format. Unnamed phones
+  are labelled by model family and full identifier instead of a shortened one.
+- New logo, app icon and colours; `--no-pdf` and `--no-xlsx` skip the new outputs.
+
+### Changed
+
+- report.html lists every identifier with what it tells, adds a recovered-data table per phone and
+  a live-acquisition section, and links to the PDF summary and the workbook.
+- The demo case has generated pictures (a photo, a photographed document, a floor plan, a
+  wallpaper) instead of 1-pixel placeholders.
+
+### Fixed
+
+- Notes and warnings show Windows errors readably ("PermissionError: Permission denied:
+  C:\Windows\System32\config\SYSTEM") instead of an escaped `\\?\` path.
+- Coverage notes were cut off: the Coverage page now shows the selected file's full note and path.
+- Icons that did not exist in the icon font drew empty circles; a test now checks every name.
+- The executables now include the package's data files (logo, style images, the MAC vendor table).
+
 ## [0.1.3] - 2026-10-19
 
 ### Fixed
@@ -144,7 +205,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.2.0
 [0.1.3]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.3
 [0.1.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.2
 [0.1.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.1
