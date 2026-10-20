@@ -58,6 +58,28 @@ def display_path(path: Path | str) -> str:
     return s
 
 
+def describe_error(exc: BaseException) -> str:
+    """An exception as one readable line for notes and warnings.
+
+    ``str()`` of a Windows error shows the path quoted and escaped, with the extended-length
+    prefix (``'\\\\\\\\?\\\\C:\\\\Windows\\\\...'``); this gives the message, the Windows error
+    number and the plain path instead.
+    """
+    name = type(exc).__name__
+    if isinstance(exc, OSError) and exc.strerror:
+        text = f"{name}: {exc.strerror}"
+        if getattr(exc, "winerror", None):
+            text += f" (Windows error {exc.winerror})"
+        files = [display_path(f) for f in (exc.filename, exc.filename2) if f]
+        return text + (f": {' -> '.join(files)}" if files else "")
+    text = str(exc) or repr(exc)
+    for prefix in ("\\\\\\\\?\\\\UNC\\\\", "\\\\?\\UNC\\"):  # escaped (repr) and plain forms
+        text = text.replace(prefix, "\\\\\\\\" if prefix.startswith("\\\\\\\\") else "\\\\")
+    for prefix in ("\\\\\\\\?\\\\", "\\\\?\\"):
+        text = text.replace(prefix, "")
+    return f"{name}: {text}"
+
+
 class EvidenceFS:
     """A read-only, case-insensitive view of a directory tree."""
 

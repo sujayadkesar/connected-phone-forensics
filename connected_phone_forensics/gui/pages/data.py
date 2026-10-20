@@ -81,11 +81,11 @@ class CategoryTile(QFrame):
         self.badge.setFixedSize(30, 30)
         self.badge.paintEvent = self._paint_badge
         self.count = label("0", "TileValue")
-        self.title = label(title, "Small")
-        self.sub = label("", "Faint")
-        self.setLayout(vbox(hbox(self.badge, "stretch"), self.count, self.title, self.sub, spacing=1,
+        self.title = label(title, "Small", wrap=True)
+        self.sub = label("", "Faint", wrap=True)  # wraps rather than widening the tile
+        self.setLayout(vbox(hbox(self.badge, "stretch"), self.count, self.title, self.sub, "stretch", spacing=1,
                             margins=(14, 12, 14, 12)))
-        self.setMinimumWidth(128)
+        self.setMinimumWidth(104)
         THEME.on_change(self.badge.update)
 
     def _paint_badge(self, _e) -> None:

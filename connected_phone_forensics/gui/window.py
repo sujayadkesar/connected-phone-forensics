@@ -323,11 +323,14 @@ class MainWindow(QMainWindow):
 
 
 def header_actions(window: MainWindow) -> list[QPushButton]:
-    """'Open report' and 'Open folder' buttons for the current case."""
-    report = button("Open report", None, "ph.arrow-square-out",
+    """Buttons that open the current case's reports and its folder."""
+    report = button("Report", None, "ph.arrow-square-out",
                     lambda: window.open_path(window.case.report if window.case else None),
-                    "Open the HTML report in your browser")
-    folder = button("Output folder", None, "ph.folder-open",
-                    lambda: window.open_path(window.case.outdir if window.case else None),
-                    "Show the folder with the report, timeline and hashes")
-    return [report, folder]
+                    "Open the detailed HTML report in your browser")
+    pdf = button("PDF summary", None, "ph.file-pdf", lambda: window.pages["data"]._open_output("summary.pdf"),
+                 "Open the PDF summary (written first for a case scanned by an older version)")
+    xlsx = button("Workbook", None, "ph.table", lambda: window.pages["data"]._open_output("workbook.xlsx"),
+                  "Open the Excel workbook: a summary sheet and one sheet per phone")
+    folder = tool_button("ph.folder-open", "Show the case folder (report, workbook, timeline, hashes)",
+                         lambda: window.open_path(window.case.outdir if window.case else None), 18)
+    return [report, pdf, xlsx, folder]

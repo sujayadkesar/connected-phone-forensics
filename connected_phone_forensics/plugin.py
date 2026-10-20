@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar
 
-from .evidence import SystemRoot, long_path
+from .evidence import SystemRoot, describe_error, long_path
 from .model import Channel, Observation, Provenance, Validation
 from .readers import plist as plistreader
 from .readers.registry import Hive, open_hive
@@ -268,9 +268,8 @@ class Context:
         try:
             yield counter
         except Exception as exc:  # noqa: BLE001 - isolate failures to one file
-            self.cover(path, ERROR, note=f"{type(exc).__name__}: {exc}")
-            self.warn(f"failed to parse: {type(exc).__name__}: {exc}\n"
-                      f"{traceback.format_exc(limit=3)}", path)
+            self.cover(path, ERROR, note=describe_error(exc))
+            self.warn(f"failed to parse: {describe_error(exc)}\n{traceback.format_exc(limit=3)}", path)
             return
         rel = self.fs.rel(path)
         if not any(c.source_path == rel for c in self.coverage[before_cov:]):

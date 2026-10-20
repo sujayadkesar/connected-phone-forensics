@@ -23,7 +23,8 @@ def write_all(result: ScanResult, outdir: Path, html: bool = True, xlsx: bool = 
     outdir.mkdir(parents=True, exist_ok=True)
     written = write_structured(result, outdir)
     if html:
-        written.append(write_html(result, outdir / "report.html"))
+        companions = tuple(n for n, on in (("summary.pdf", pdf), ("workbook.xlsx", xlsx)) if on)
+        written.append(write_html(result, outdir / "report.html", companions))
     if xlsx or pdf:
         from .. import content
         from ..casedata import CaseData

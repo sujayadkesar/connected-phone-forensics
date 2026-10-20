@@ -129,9 +129,11 @@ def _run_plugin(cls: type[Plugin], system: SystemRoot, workdir, export_dir, capt
     try:
         plugin.run(ctx)
     except Exception as exc:  # noqa: BLE001 - one plugin must not abort the scan
-        ctx.warn(f"plugin crashed: {type(exc).__name__}: {exc}\n{traceback.format_exc(limit=5)}")
+        from .evidence import describe_error
+
+        ctx.warn(f"plugin crashed: {describe_error(exc)}\n{traceback.format_exc(limit=5)}")
         ctx.coverage.append(CoverageEntry(plugin.id, system.label, "", ERROR,
-                                          note=f"plugin crashed: {exc}"))
+                                          note=f"plugin crashed: {describe_error(exc)}"))
     for msg in capture.take():
         ctx.warn(f"library warning: {msg}")
     return ctx

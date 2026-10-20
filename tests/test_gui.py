@@ -251,3 +251,27 @@ def test_device_page_draws_the_phone_and_lists_every_identifier(app, window, tmp
     assert len(rows) == len(phone["identifiers"])
     text = " ".join(lbl.text() for r in rows for lbl in r.findChildren(type(page.list_empty)))
     assert "A16 Bionic" in text  # the UDID decoded, not trimmed
+
+
+def test_every_icon_name_exists():
+    # An unknown name draws an empty circle; check every name the app uses against the icon fonts.
+    import glob
+    import json
+    import re
+    from pathlib import Path
+
+    import qtawesome
+
+    fonts = Path(qtawesome.__file__).parent / "fonts"
+    maps = {}
+    for prefix, pattern in (("ph", "phosphor*"), ("mdi6", "materialdesignicons6*")):
+        found = glob.glob(str(fonts / f"{pattern}charmap*.json"))
+        maps[prefix] = set(json.loads(Path(found[0]).read_text(encoding="utf-8"))) if found else None
+    package = Path(__file__).resolve().parents[1] / "connected_phone_forensics"
+    missing = []
+    for source in package.rglob("*.py"):
+        for m in re.finditer(r"""["'](ph|mdi6)\.([a-z0-9-]+)["']""", source.read_text(encoding="utf-8")):
+            known = maps.get(m.group(1))
+            if known is not None and m.group(2) not in known:
+                missing.append(f"{source.name}: {m.group(0)}")
+    assert not missing, missing

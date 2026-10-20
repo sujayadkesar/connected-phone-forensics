@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from .. import timeutil
+from ..evidence import describe_error
 from .regf_log import APPLIED, NOT_APPLIED, LogResult, Replay, replay
 
 
@@ -145,7 +146,7 @@ def open_hive(path: Path, workdir: Path | None = None) -> Iterator[Hive]:
     except Exception as exc:  # noqa: BLE001 - a damaged log must not hide the hive itself
         result = Replay(NOT_APPLIED, summary=f"transaction-log replay failed: {type(exc).__name__}",
                         logs=[LogResult(p.name, note="not applied: replay failed") for p in logs],
-                        warnings=[f"transaction-log replay failed ({type(exc).__name__}: {exc}); "
+                        warnings=[f"transaction-log replay failed ({describe_error(exc)}); "
                                   "the hive was read without its logs"])
     if result.data is None:
         yield Hive(RegistryHive(str(path)), path, result, logs)

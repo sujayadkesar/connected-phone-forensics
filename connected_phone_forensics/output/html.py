@@ -17,6 +17,7 @@ from collections import Counter
 from html import escape
 from pathlib import Path
 
+from .. import content
 from ..engine import ScanResult
 from ..plugin import ERROR, UNRECOGNISED
 from ..timeutil import iso
@@ -49,6 +50,8 @@ background:var(--panel);color:var(--ink);border:1px solid var(--line);border-rad
 .filters input{min-width:260px}#tl tr.data td{background:var(--chip)}#more{margin:12px 0;padding:6px 14px;
 border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 .note{border-left:3px solid var(--line);padding:4px 12px;color:var(--muted);margin:10px 0}
+table.ids td:nth-child(2){min-width:19ch}table.ids td:last-child{font-size:11px;color:var(--muted)}
+header .mono{overflow-wrap:anywhere}
 @media print{nav,.filters,#more{display:none}body{background:#fff}.card{border-color:#ccc}}
 """
 
@@ -103,17 +106,45 @@ def _candidate_groups(result: ScanResult) -> str:
             + "".join(items) + "</ul>")
 
 
-def _device_cards(result: ScanResult) -> str:
+def _device_cards(result: ScanResult, per_device: dict) -> str:
     phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
     others = [d for d in result.graph.devices if d.device_class not in (None, "phone", "tablet")]
-    html = _cards(result, phones) or '<p class="note">No phones were identified in this evidence.</p>'
+    html = _cards(result, phones, per_device) or '<p class="note">No phones were identified in this evidence.</p>'
     if others:
         html += (f"<details><summary>Other devices ({len(others)}): headsets, computers, peripherals"
-                 f"</summary>{_cards(result, others)}</details>")
+                 f"</summary>{_cards(result, others, per_device)}</details>")
     return html
 
 
-def _cards(result: ScanResult, devices) -> str:
+def _identifier_rows(d: dict) -> str:
+    """Every identifier in full: what it is, its value, and what its format tells."""
+    order = content.ID_ORDER
+    rows = []
+    for i in sorted(d["identifiers"], key=lambda i: order.index(i["kind"]) if i["kind"] in order else len(order)):
+        dec = i.get("decoded") or {}
+        fields = "; ".join(f"{k}: {v}" for k, v in dec.get("fields") or [] if k != "Value")
+        meaning = escape(dec.get("summary") or "")
+        if fields:
+            meaning += f"<div class='muted'>{escape(fields)}</div>"
+        if dec.get("note"):
+            meaning += f"<div class='muted'>{escape(dec['note'])}</div>"
+        recorded = (f"<div class='muted'>as recorded: {escape(', '.join(i['as_recorded']))}</div>"
+                    if i.get("as_recorded") else "")
+        rows.append(f"<tr><td>{escape(dec.get('label') or i['kind'])}</td>"
+                    f"<td class='mono'>{escape(i.get('display') or i['value'])}{recorded}</td>"
+                    f"<td>{meaning or '—'}</td><td>{escape(i['strength'])}</td>"
+                    f"<td class='mono'>{escape(', '.join(i['sources']))}</td></tr>")
+    return "".join(rows)
+
+
+def _recovered_line(counts) -> str:
+    parts = [f"{counts[c.key]:,} {c.title.lower()}" for c in content.CATEGORIES
+             if c.key != "connections" and counts.get(c.key)]
+    return ("<p class='muted'>Recovered from this phone: " + escape(" · ".join(parts))
+            + " (every item is in the timeline and in workbook.xlsx).</p>") if parts else ""
+
+
+def _cards(result: ScanResult, devices, per_device: dict) -> str:
     out = []
     matches = result.graph.possible_matches
     for dev in devices:
@@ -123,11 +154,9 @@ def _cards(result: ScanResult, devices) -> str:
         os_badge = f'<span class="badge">{escape(dev.phone_os)}</span>' if dev.phone_os else ""
         if dev.device_class:
             os_badge += f'<span class="badge">{escape(dev.device_class)}</span>'
-        ids = "".join(
-            f"<tr><td>{escape(i['kind'])}</td><td class='mono'>{escape(i['value'])}"
-            + (f"<div class='muted'>as recorded: {escape(', '.join(i['as_recorded']))}</div>" if i['as_recorded'] else "")
-            + f"</td><td>{escape(i['strength'])}</td><td class='mono'>{escape(', '.join(i['sources']))}</td></tr>"
-            for i in d["identifiers"])
+        ids = _identifier_rows(d)
+        facts = content.phone_facts(d)
+        model = f" · {escape(facts['model'])}" if facts["model"] else ""
         chans = "".join(
             f"<tr><td>{escape(c['channel'])}</td><td class='mono'>{escape(_fmt_iso(c['first_seen']))}</td>"
             f"<td class='mono'>{escape(_fmt_iso(c['last_seen']))}</td><td>{c['observations']}</td>"
@@ -148,9 +177,10 @@ def _cards(result: ScanResult, devices) -> str:
         out.append(f"""
 <section class="card" id="{escape(dev.id)}">
   <div class="card-head"><h3>{escape(dev.label)}</h3><span class="mono muted">{escape(dev.id)}</span>{badge}{os_badge}</div>
-  <div class="muted">First seen {_fmt(dev.first_seen)} · last seen {_fmt(dev.last_seen)} ·
+  <div class="muted">{escape(facts['os'])}{model} · first seen {_fmt(dev.first_seen)} · last seen {_fmt(dev.last_seen)} ·
    computers: {escape(', '.join(d['systems']) or '—')} · local users: {escape(', '.join(d['users']) or '—')}</div>
-  <table><thead><tr><th>Identifier</th><th>Value</th><th>Strength</th><th>Asserted by</th></tr></thead><tbody>{ids}</tbody></table>
+  {_recovered_line(per_device.get(dev.id, {}))}
+  <table class="ids"><thead><tr><th>Identifier</th><th>Value</th><th>What it tells</th><th>Strength</th><th>Asserted by</th></tr></thead><tbody>{ids}</tbody></table>
   <table><thead><tr><th>Channel</th><th>First seen</th><th>Last seen</th><th>Records</th><th>Artifacts</th></tr></thead><tbody>{chans}</tbody></table>
   <p class="muted">Events: {events or '—'}</p>
   {"<details><summary>How these records were linked (" + str(len(d['merge_reasons'])) + ")</summary><ul>" + reasons + "</ul></details>" if reasons else ""}
@@ -228,7 +258,58 @@ def _encode(rows: list[dict]) -> dict:
     return {"keys": keys, "dict": tables, "rows": out_rows}
 
 
-def write_html(result: ScanResult, path: Path) -> Path:
+def _recovered_table(result: ScanResult, items: dict, per_device: dict) -> str:
+    phones = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
+    cats = [c for c in content.CATEGORIES if c.key != "connections"]
+    rows = []
+    for dev in phones:
+        counts = per_device.get(dev.id, {})
+        if not any(counts.get(c.key) for c in cats):
+            continue
+        deleted = sum(1 for k in items for r in items[k] if r["device"] == dev.id and r.get("status"))
+        rows.append(f"<tr><td><a href='#{escape(dev.id)}'>{escape(dev.label)}</a> <span class='muted mono'>"
+                    f"{escape(dev.id)}</span></td>" + "".join(f"<td>{counts.get(c.key, 0):,}</td>" for c in cats)
+                    + f"<td>{deleted:,}</td></tr>")
+    if not rows:
+        return ""
+    head = "".join(f"<th>{escape(c.title)}</th>" for c in cats)
+    return ("<h2 id='recovered'>Recovered data</h2><p class='note'>What the computers held of each phone's own data. "
+            "Each item is a record in the timeline below (with its source file and record) and is listed, by kind, "
+            "on the phone's sheet in workbook.xlsx. Items recovered from deleted or overwritten database records are "
+            "marked <b>[recovered: …]</b>.</p><table><thead><tr><th>Phone</th>" + head
+            + "<th>Recovered after deletion</th></tr></thead><tbody>" + "".join(rows) + "</tbody></table>")
+
+
+def _acquisition(result: ScanResult) -> str:
+    a = result.acquisition
+    if not a:
+        return ""
+    drive = a.get("destination_drive") or {}
+    rows = [("Computer", f"{a.get('computer')} ({a.get('windows') or 'Windows'})"),
+            ("Acquired by", f"{a.get('user')}" + (", as administrator" if a.get("elevated") else "")
+             + (", backup privilege enabled" if a.get("backup_privilege") else "")),
+            ("Started / finished (UTC)", f"{_fmt_iso(a.get('started'))} / {_fmt_iso(a.get('finished'))}"),
+            ("Source", a.get("source_root") or ""),
+            ("Output", f"{a.get('destination')} on {drive.get('root', '')} ({drive.get('kind', '')} "
+                       f"{drive.get('filesystem', '')}, label {drive.get('label') or '—'}, serial "
+                       f"{drive.get('serial') or '—'})"),
+            ("Acquired", f"{a.get('files_acquired', 0):,} files ({(a.get('bytes_acquired') or 0) / 1e6:,.1f} MB), "
+                         f"{a.get('hives_saved', 0)} registry hives"),
+            ("Errors", f"{a.get('errors', 0):,}")]
+    body = "".join(f"<tr><th>{escape(k)}</th><td>{escape(str(v))}</td></tr>" for k, v in rows)
+    warn = "".join(f"<li>{escape(w)}</li>" for w in a.get("warnings") or [])
+    return (f"<h2 id='acquisition'>Live acquisition</h2><table>{body}</table>"
+            "<p class='note'>Registry hives Windows keeps locked were saved through the registry API "
+            "(RegSaveKeyEx, as <span class='mono'>reg save</span> does). Every other file the parsers read was "
+            "copied with the backup privilege, hashed while it was read and given its original times; the copies "
+            "were then scanned. acquisition.json and acquisition.sha256 (one folder up from this report) list every "
+            "item with its source, method and SHA-256; acquisition.log has the timestamped steps. Running a program "
+            "leaves traces of its own on the examined computer (for example a Prefetch entry and event-log entries "
+            "for the administrator prompt).</p>" + (f"<ul>{warn}</ul>" if warn else ""))
+
+
+def write_html(result: ScanResult, path: Path, companions: tuple[str, ...] = ()) -> Path:
+    """``companions``: files written next to the report (summary.pdf, workbook.xlsx), linked from its header."""
     timeline = []
     total = 0
     for obs, rec in iter_records(result):
@@ -242,6 +323,9 @@ def write_html(result: ScanResult, path: Path) -> Path:
     truncated = total - len(timeline)
     data = json.dumps(_encode(timeline), default=_jsonable, ensure_ascii=False, separators=(",", ":"))
     data = data.replace("<", "\\u003c")
+    records = [rec for _obs, rec in iter_records(result)]
+    items = content.extract(records, [d.to_dict() for d in result.graph.devices])
+    per_device = content.counts(items)
     phone_devs = [d for d in result.graph.devices if d.device_class in (None, "phone", "tablet")]
     n_dev = len(phone_devs)
     n_conf = sum(1 for d in phone_devs if d.confirmed)
@@ -252,6 +336,8 @@ def write_html(result: ScanResult, path: Path) -> Path:
         f"<div class='muted mono'>{escape(s.details.get('root_folder', ''))}</div></td>"
         f"<td>{escape(', '.join(u.name for u in s.users) or '—')}</td></tr>" for s in result.systems)
     case = "".join(f"<span>{escape(k)}: <b>{escape(v)}</b></span> · " for k, v in result.case.items() if v)
+    names = {"summary.pdf": "PDF summary", "workbook.xlsx": "Excel workbook"}
+    links = "".join(f'<a href="{escape(c)}">{escape(names.get(c, c))}</a>' for c in companions)
     warnings = "".join(
         f"<li><span class='mono'>{escape(w.plugin)}</span> {escape(w.source_path or '')}: "
         f"{escape(w.message.splitlines()[0])}</li>" for w in result.warnings)
@@ -266,8 +352,8 @@ def write_html(result: ScanResult, path: Path) -> Path:
   <h1>Connected Phone Forensics report</h1>
   <div class="muted">{case}Generated {_fmt(result.finished)} by Connected Phone Forensics {escape(result.tool_version)} ·
   input <span class="mono">{escape(result.input_path)}</span></div>
-  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#timeline">Timeline</a>
-  <a href="#coverage">Coverage</a><a href="#method">Method</a></nav>
+  <nav><a href="#groups">Possible matches</a><a href="#devices">Devices</a><a href="#recovered">Recovered data</a>
+  <a href="#timeline">Timeline</a><a href="#coverage">Coverage</a>{'<a href="#acquisition">Live acquisition</a>' if result.acquisition else ''}<a href="#method">Method</a>{links}</nav>
 </header>
 <main>
 <div class="grid">
@@ -281,7 +367,8 @@ def write_html(result: ScanResult, path: Path) -> Path:
 <table><thead><tr><th>Label</th><th>OS</th><th>Version</th><th>User profiles</th></tr></thead><tbody>{systems}</tbody></table>
 {_candidate_groups(result)}
 <h2 id="devices">Phones</h2>
-{_device_cards(result)}
+{_device_cards(result, per_device)}
+{_recovered_table(result, items, per_device)}
 <h2 id="timeline">Timeline</h2>
 <div class="filters"><input id="q" placeholder="Search all fields…"><select id="fdev"><option value="">All devices</option></select>
 <select id="fch"><option value="">All channels</option></select><select id="fart"><option value="">All artifacts</option></select></div>
@@ -293,6 +380,7 @@ def write_html(result: ScanResult, path: Path) -> Path:
 <h2 id="coverage">Coverage</h2>
 {_coverage(result)}
 {"<h2>Warnings</h2><ul>" + warnings + "</ul>" if warnings else ""}
+{_acquisition(result)}
 <h2 id="method">Method</h2>
 <p class="note">Evidence is read-only. SQLite databases are copied together with their -wal/-shm files and the copy is
 opened, so the original is never modified and committed WAL records are included. Dirty registry hives are recovered

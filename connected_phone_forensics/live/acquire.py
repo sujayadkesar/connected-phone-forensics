@@ -397,10 +397,9 @@ def windows_patterns() -> list[str]:
 
 
 def _describe(exc: OSError) -> str:
-    from ..evidence import display_path
+    from ..evidence import describe_error
 
-    msg = exc.strerror or str(exc)
-    return f"{type(exc).__name__}: {msg}" + (f" ({display_path(exc.filename)})" if exc.filename else "")
+    return describe_error(exc)
 
 
 class LiveBackend:

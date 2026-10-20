@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QWidget
 
+from ... import content
 from ..casedata import CLASS_LABEL, CaseData, channel_label, fmt_duration, fmt_time, os_label
 from ..icons import OS_ICON, device_icon
 from ..widgets import (
@@ -80,6 +83,13 @@ class OverviewPage(QWidget):
             tiles.addWidget(t, 0, i)
         lay.addLayout(tiles)
 
+        self.recovered = Card("Recovered from the phones", "Messages, calls, contacts, photos and more the computers "
+                                                             "held. Click a kind to see every item.")
+        self.recovered.add_action(button("Recovered data", "Ghost", "ph.arrow-right", lambda: window.go("data")))
+        self.recovered_row = hbox(spacing=10)
+        self.recovered.body.addLayout(self.recovered_row)
+        lay.addWidget(self.recovered)
+
         self.matches = Card("Records that may be the same phone", tone="warn")
         self.matches_text = label("", "Muted", wrap=True)
         self.matches.body.addWidget(self.matches_text)
@@ -108,6 +118,13 @@ class OverviewPage(QWidget):
         self.bars = BarList()
         self.channels.body.addWidget(self.bars)
         right.addWidget(self.channels)
+
+        self.live_card = Card("Live acquisition", "Acquired from the running computer, as administrator.")
+        self.live_kv = KeyValueGrid()
+        self.live_card.body.addWidget(self.live_kv)
+        self.live_card.add_action(button("Record", "Ghost", "ph.file-text", self._open_acquisition,
+                                         "Open acquisition.json: every item with its source, method and SHA-256"))
+        right.addWidget(self.live_card)
 
         self.case_card = Card("Case")
         self.case_kv = KeyValueGrid()
@@ -171,6 +188,32 @@ class OverviewPage(QWidget):
             self.computer_list.addLayout(hbox(IconBadge(OS_ICON.get(s.get("os"), "ph.desktop"), "muted", 34),
                                               (text, 1), spacing=12))
 
+        from .data import CategoryTile
+
+        clear_layout(self.recovered_row)
+        items = self.window_.pages["data"].items
+        for cat in content.CATEGORIES:
+            rows = items.get(cat.key) or []
+            tile = CategoryTile(cat.key, cat.title, cat.icon)
+            tile.set(len(rows), sum(1 for r in rows if r.get("status")), len(rows))
+            tile.clicked.connect(lambda key: self.window_.go("data", key))
+            self.recovered_row.addWidget(tile, 1)
+        self.recovered.setVisible(any(items.get(c.key) for c in content.CATEGORIES))
+
+        a = case.acquisition
+        self.live_card.setVisible(bool(a))
+        self.live_kv.clear()
+        if a:
+            drive = a.get("destination_drive") or {}
+            self.live_kv.add("Computer", f"{a.get('computer')} · {a.get('windows') or 'Windows'}")
+            self.live_kv.add("By", f"{a.get('user')}" + (" (administrator)" if a.get("elevated") else ""))
+            self.live_kv.add("Started", f"{fmt_time(a.get('started'))} UTC")
+            self.live_kv.add("Acquired", f"{a.get('files_acquired', 0):,} files · {a.get('hives_saved', 0)} registry "
+                                         f"hives · {(a.get('bytes_acquired') or 0) / 1e6:,.1f} MB")
+            self.live_kv.add("Errors", f"{a.get('errors', 0):,}" + (" (see Issues)" if a.get("errors") else ""))
+            self.live_kv.add("Output", f"{drive.get('root', '')} {drive.get('label') or ''} "
+                                       f"({drive.get('kind', '')} {drive.get('filesystem', '')})".strip())
+
         counts = case.channel_counts()
         self.bars.set([(channel_label(c), n, f"{channel_label(c)}: {n:,} record{'s' if n != 1 else ''}")
                        for c, n in counts])
@@ -183,5 +226,11 @@ class OverviewPage(QWidget):
         self.case_kv.add("Output", str(case.outdir) if case.outdir else "—", mono=True)
         self.case_kv.add("Started", f"{fmt_time(case.started)} UTC" if case.started else "—")
         self.case_kv.add("Tool", f"version {case.tool_version}")
+
+    def _open_acquisition(self) -> None:
+        case = self.window_.case
+        if case and case.outdir:
+            record = Path(case.outdir).parent / "acquisition.json"
+            self.window_.open_path(record if record.is_file() else Path(case.outdir).parent)
 
 

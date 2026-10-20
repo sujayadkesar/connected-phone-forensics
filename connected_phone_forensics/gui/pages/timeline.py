@@ -144,8 +144,15 @@ class TimelinePage(QWidget):
         self._apply()
 
     def focus_item(self, arg) -> None:
-        """``{"device": id}`` filters to a device; ``{"record": index}`` selects one record."""
-        if isinstance(arg, dict) and arg.get("device"):
+        """``{"device": id}`` filters to a device, ``{"search": text}`` searches, ``{"record": index}``
+        selects one record."""
+        if isinstance(arg, dict) and arg.get("search"):
+            self._clear(apply=False)
+            self.search.blockSignals(True)
+            self.search.setText(arg["search"])
+            self.search.blockSignals(False)
+            self._apply()
+        elif isinstance(arg, dict) and arg.get("device"):
             self._clear(apply=False)
             self.f_device.select(arg["device"])
             self._apply()
@@ -205,7 +212,7 @@ class TimelinePage(QWidget):
     def _show(self, r: dict | None) -> None:
         clear_layout(self.detail_lay)
         if r is None:
-            self.detail_lay.addWidget(EmptyState("ph.cursor-click", "Nothing selected",
+            self.detail_lay.addWidget(EmptyState("ph.hand-pointing", "Nothing selected",
                                                  "Select a record to see where it came from: the file, the exact "
                                                  "record inside it and the file's SHA-256."))
             return
