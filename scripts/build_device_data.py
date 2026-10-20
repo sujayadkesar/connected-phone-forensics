@@ -50,7 +50,7 @@ def android_models(path: Path) -> dict[str, tuple[str, str]]:
             continue
         key = model.upper()
         brands[key][_brand(brand)] += 1
-        if name and name.upper() != key:  # a marketing name, not the code repeated
+        if name and (name.upper() != key or " " in name):  # a marketing name ("Pixel 7a"), not a bare code
             names[key][name] += 1
     out = {}
     for key, bc in brands.items():
@@ -78,22 +78,27 @@ def usb_vendors(path: Path) -> tuple[str, dict[str, str]]:
     return version, vendors
 
 
+def _write_gz(path: Path, text: str) -> None:
+    """Gzip without a timestamp or file name in the header: the same lists always give the same file."""
+    with open(path, "wb") as raw, gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=9,
+                                                 mtime=0) as gz:
+        gz.write(text.encode("utf-8"))
+
+
 def main(args: list[str]) -> int:
     models = android_models(Path(args[0]))
     lines = [f"# Google Play supported devices list (storage.googleapis.com/play_public/supported_devices.csv), "
              f"retrieved {date.today()}"]
     lines += [f"{k}\t{b}\t{n}" for k, (b, n) in sorted(models.items())]
     out = DATA / "android_models.tsv.gz"
-    with gzip.open(out, "wt", encoding="utf-8", newline="\n", compresslevel=9) as f:
-        f.write("\n".join(lines) + "\n")
+    _write_gz(out, "\n".join(lines) + "\n")
     print(f"{len(models)} Android models -> {out} ({out.stat().st_size // 1024} KB)")
 
     version, vendors = usb_vendors(Path(args[1]))
     lines = [f"# The Linux USB ID repository (www.linux-usb.org/usb.ids), version {version}; BSD-3-Clause"]
     lines += [f"{k}\t{v}" for k, v in sorted(vendors.items())]
     out = DATA / "usb_vendors.tsv.gz"
-    with gzip.open(out, "wt", encoding="utf-8", newline="\n", compresslevel=9) as f:
-        f.write("\n".join(lines) + "\n")
+    _write_gz(out, "\n".join(lines) + "\n")
     print(f"{len(vendors)} USB vendors -> {out} ({out.stat().st_size // 1024} KB)")
     return 0
 

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QGridLayout, QWidget
 
 from ... import content
 from ..casedata import CLASS_LABEL, CaseData, channel_label, fmt_duration, fmt_time, os_label
+from ..hero import Banner, HeroArt
 from ..icons import OS_ICON, device_icon
 from ..widgets import (
     BarList,
@@ -18,13 +19,13 @@ from ..widgets import (
     Divider,
     IconBadge,
     KeyValueGrid,
-    PageHeader,
     PageScroll,
     StatTile,
     button,
     clear_layout,
     hbox,
     label,
+    overline,
     vbox,
 )
 from ..window import header_actions
@@ -57,6 +58,23 @@ class DeviceRow(Card):
         self.setToolTip("Open this device")
 
 
+class HotspotRow(Card):
+    """A phone hotspot network in the Overview's list."""
+
+    def __init__(self, net: dict, on_open):
+        super().__init__(padding=12, spacing=4, clickable=True)
+        badge = IconBadge("ph.wifi-high", "warn", 34)
+        n = len(net["sessions"])
+        likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "unknown phone")
+        name = label(f"“{net['ssid']}”", "H3")
+        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}", "Small")
+        last = vbox(label("Last joined", "Small"), label(fmt_time(net.get("last"), False), "Mono", mono=True),
+                    "stretch", spacing=1)
+        self.body.addLayout(hbox(badge, (vbox(name, sub, spacing=2), 1), last, spacing=12))
+        self.clicked.connect(on_open)
+        self.setToolTip("Open on the Devices page")
+
+
 class OverviewPage(QWidget):
     def __init__(self, window):
         super().__init__()
@@ -64,22 +82,30 @@ class OverviewPage(QWidget):
         content = QWidget()
         lay = vbox(spacing=20)
         content.setLayout(lay)
-        self.header = PageHeader("Overview")
-        for b in header_actions(window):
-            self.header.actions.addWidget(b)
-        lay.addWidget(self.header)
+
+        self.banner = Banner()
+        self.case_name = label("", "CaseName", wrap=True)
+        self.case_name.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.case_sub = label("", "Muted", wrap=True)
+        actions = hbox(*header_actions(window), "stretch", spacing=8)
+        self.case_art = HeroArt(animated=False, height=170)
+        text = vbox("stretch", overline("Case"), self.case_name, self.case_sub, 10, actions, "stretch", spacing=6)
+        self.banner.setLayout(hbox((text, 6), (self.case_art, 4), spacing=16, margins=(30, 20, 22, 20)))
+        lay.addWidget(self.banner)
 
         tiles = QGridLayout()
         tiles.setSpacing(14)
         self.t_phones = StatTile("ph.device-mobile", "Phones and tablets", "accent")
+        self.t_hotspots = StatTile("ph.wifi-high", "Phone hotspots", "warn")
         self.t_other = StatTile("ph.headphones", "Other devices", "muted")
         self.t_records = StatTile("ph.clock-counter-clockwise", "Records", "accent")
         self.t_issues = StatTile("ph.warning-circle", "Issues", "ok")
         self.t_phones.clicked.connect(lambda: window.go("devices"))
+        self.t_hotspots.clicked.connect(lambda: window.go("devices", "__hotspots__"))
         self.t_other.clicked.connect(lambda: window.go("devices", "__other__"))
         self.t_records.clicked.connect(lambda: window.go("timeline"))
         self.t_issues.clicked.connect(lambda: window.go("issues"))
-        for i, t in enumerate((self.t_phones, self.t_other, self.t_records, self.t_issues)):
+        for i, t in enumerate((self.t_phones, self.t_hotspots, self.t_other, self.t_records, self.t_issues)):
             tiles.addWidget(t, 0, i)
         lay.addLayout(tiles)
 
@@ -107,6 +133,13 @@ class OverviewPage(QWidget):
         self.phone_list = vbox(spacing=8)
         self.phones.body.addLayout(self.phone_list)
         left.addWidget(self.phones)
+        self.hotspot_card = Card("Phone hotspots joined", "Phones known only by the Wi-Fi hotspot the computer "
+                                                          "joined, one row per network name.")
+        self.hotspot_card.add_action(button("All hotspots", "Ghost", "ph.arrow-right",
+                                            lambda: window.go("devices", "__hotspots__")))
+        self.hotspot_list = vbox(spacing=8)
+        self.hotspot_card.body.addLayout(self.hotspot_list)
+        left.addWidget(self.hotspot_card)
         left.addStretch(1)
 
         self.computers = Card("Computers", "Systems found in the evidence.")
@@ -144,12 +177,16 @@ class OverviewPage(QWidget):
             sub.append(f"scanned {fmt_time(case.started, False)} UTC")
         if case.duration is not None:
             sub.append(f"took {fmt_duration(case.duration)}")
-        self.header.set(case.title, " · ".join(sub))
+        self.case_name.setText(case.title)
+        self.case_sub.setText(" · ".join(sub))
 
-        phones, others = case.phones, case.others
+        phones, others, nets = case.phones, case.others, case.hotspots
         confirmed = sum(1 for d in phones if d.get("confirmed"))
         self.t_phones.set(f"{len(phones)}", f"{confirmed} confirmed by a strong identifier" if phones else
                           "None found")
+        points = sum(len(n["sessions"]) for n in nets)
+        self.t_hotspots.set(f"{len(nets)}", f"networks, {points} access point{'s' if points != 1 else ''}" if nets
+                            else "None joined")
         self.t_other.set(f"{len(others)}", "Headsets, computers, peripherals" if others else "None found")
         timed = sum(1 for r in case.records if r.get("datetime"))
         self.t_records.set(f"{len(case.records):,}", f"{timed:,} with a time, from {len(case.coverage):,} files")
@@ -174,6 +211,13 @@ class OverviewPage(QWidget):
                 self.phone_list.addWidget(label(f"and {len(phones) - 12} more on the Devices page", "Small"))
         else:
             self.phone_list.addWidget(label("No phones were identified in this evidence.", "Muted"))
+
+        clear_layout(self.hotspot_list)
+        self.hotspot_card.setVisible(bool(nets))
+        for net in nets[:6]:
+            self.hotspot_list.addWidget(HotspotRow(net, lambda: self.window_.go("devices", "__hotspots__")))
+        if len(nets) > 6:
+            self.hotspot_list.addWidget(label(f"and {len(nets) - 6} more on the Devices page", "Small"))
 
         clear_layout(self.computer_list)
         for i, s in enumerate(case.systems):

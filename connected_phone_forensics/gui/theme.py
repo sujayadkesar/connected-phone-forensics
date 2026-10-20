@@ -158,11 +158,11 @@ QToolTip {{ background: {p.surface}; color: {p.text}; border: 1px solid {p.borde
 
 /* sidebar */
 #Sidebar {{ background: {p.sidebar}; border-right: 1px solid {p.border}; }}
-#NavSection {{ color: {p.faint}; font-size: 7.75pt; font-weight: 700; padding: 14px 12px 4px 12px; }}
-QPushButton#Nav {{ text-align: left; padding: 8px 12px; border-radius: 8px; border: none; background: transparent;
-    color: {p.muted}; font-weight: 500; }}
+#NavSection {{ color: {p.faint}; font-size: 8pt; font-weight: 700; padding: 14px 12px 6px 12px; }}
+QPushButton#Nav {{ text-align: left; padding: 9px 12px; border-radius: 9px; border: none; background: transparent;
+    color: {mix(p.muted, p.text, 0.35)}; font-weight: 500; font-size: 10.25pt; }}
 QPushButton#Nav:hover {{ background: {p.raised}; color: {p.text}; }}
-QPushButton#Nav:checked {{ background: {p.accent_soft}; color: {p.text}; font-weight: 600; }}
+QPushButton#Nav:checked {{ background: {p.accent_soft}; color: {p.text}; font-weight: 700; }}
 QPushButton#Nav:disabled {{ color: {p.faint}; }}
 #NavCount {{ background: {p.raised}; color: {p.muted}; border-radius: 8px; padding: 1px 7px; font-size: 8pt; font-weight: 600; }}
 #NavCount[alert="true"] {{ background: {mix(p.surface, p.bad, 0.22)}; color: {p.text}; }}
@@ -170,12 +170,18 @@ QPushButton#Nav:disabled {{ color: {p.faint}; }}
 
 /* typography */
 #H1 {{ font-size: 17pt; font-weight: 600; }}
+#HeroTitle {{ font-size: 20pt; font-weight: 700; }}
+#CaseName {{ font-size: 21pt; font-weight: 700; }}
 #H2 {{ font-size: 12pt; font-weight: 600; }}
 #H3 {{ font-size: 10.25pt; font-weight: 600; }}
 #Muted {{ color: {p.muted}; }}
 #Faint {{ color: {p.faint}; }}
 #Small {{ color: {p.muted}; font-size: 8.5pt; }}
 #Overline {{ color: {p.faint}; font-size: 7.75pt; font-weight: 700; }}
+#OverlineWarn {{ color: {p.warn}; font-size: 7.75pt; font-weight: 700; }}
+QPushButton#TocChip {{ background: {p.surface}; border: 1px solid {p.border}; border-radius: 13px; padding: 4px 12px;
+    color: {p.text}; font-size: 9pt; font-weight: 500; }}
+QPushButton#TocChip:hover {{ border-color: {p.accent}; color: {p.accent}; }}
 #StatValue {{ font-size: 21pt; font-weight: 600; }}
 #Error {{ color: {p.bad}; }}
 #Mono {{ color: {p.text}; }}
@@ -222,7 +228,7 @@ QPushButton#Danger {{ background: transparent; border: 1px solid {mix(p.border, 
 QPushButton#Danger:hover {{ background: {mix(p.surface, p.bad, 0.12)}; }}
 QPushButton#Link {{ background: transparent; border: none; padding: 0; color: {p.accent}; text-align: left; }}
 QPushButton#Link:hover {{ color: {p.accent_hover}; text-decoration: underline; }}
-QPushButton#Seg {{ background: transparent; border: none; border-radius: 6px; padding: 5px 12px; color: {p.muted};
+QPushButton#Seg {{ background: transparent; border: none; border-radius: 6px; padding: 5px 9px; color: {p.muted};
     font-weight: 500; }}
 QPushButton#Seg:hover {{ color: {p.text}; }}
 QPushButton#Seg:checked {{ background: {p.surface}; color: {p.text}; border: 1px solid {p.border}; }}
@@ -266,6 +272,19 @@ QListWidget {{ background: transparent; border: none; outline: none; }}
 QListWidget::item {{ border: none; border-radius: 10px; margin: 1px 0; }}
 QListWidget::item:hover {{ background: {p.raised}; }}
 QListWidget::item:selected {{ background: {p.accent_soft}; color: {p.text}; }}
+#FilterPopup {{ background: {p.surface}; border: 1px solid {p.faint}; border-radius: 12px; }}
+QListWidget#FilterValues {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 8px; padding: 4px; }}
+QListWidget#FilterValues::item {{ border-radius: 5px; padding: 3px 4px; margin: 0; }}
+QListWidget#FilterValues::item:hover {{ background: {p.surface}; }}
+QListWidget#FilterValues::item:selected {{ background: {p.accent_soft}; }}
+QListWidget::indicator {{ width: 15px; height: 15px; border-radius: 4px; border: 1px solid {p.faint};
+    background: {p.surface}; }}
+QListWidget::indicator:checked {{ background: {p.accent}; border-color: {p.accent}; image: url("{a}/check.svg"); }}
+QPushButton#FilterChip {{ background: {p.accent_soft}; color: {p.text}; border: none; border-radius: 0;
+    border-top-left-radius: 11px; border-bottom-left-radius: 11px; padding: 4px 6px 4px 10px; font-size: 8.75pt; }}
+QPushButton#FilterChipX {{ background: {p.accent_soft}; border: none; border-radius: 0; border-top-right-radius: 11px;
+    border-bottom-right-radius: 11px; padding: 4px 9px 4px 5px; }}
+QPushButton#FilterChip:hover, QPushButton#FilterChipX:hover {{ background: {mix(p.accent_soft, p.accent, 0.25)}; }}
 QPlainTextEdit, QTextEdit {{ background: {p.raised}; border: 1px solid {p.border}; border-radius: 8px; padding: 6px;
     selection-background-color: {p.accent}; selection-color: {p.accent_text}; }}
 

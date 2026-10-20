@@ -164,6 +164,22 @@ def _windows(root: Path) -> None:
     home_prof = f"{nl}\\Profiles\\{{11111111-2222-3333-4444-555555555555}}"
     sw.value(home_prof, "ProfileName", "RiveraHome-5G")
     sw.value(home_prof, "DateCreated", _systemtime_local(datetime(2024, 11, 1, 9, 0, 0)), REG_BINARY)
+    # Another phone's hotspot, joined on three days: Android gives it a new random address (BSSID)
+    # each time it is switched on, and Windows a new profile ("Galaxy S22 5G 2", ...).
+    for n, (joined, left, mac) in enumerate((
+            (datetime(2025, 7, 2, 9, 15), datetime(2025, 7, 2, 10, 27), "0a1b2c3d4e5f"),
+            (datetime(2025, 8, 19, 18, 40), datetime(2025, 8, 19, 19, 2), "e6f1a2b3c4d5"),
+            (datetime(2025, 9, 30, 7, 5), datetime(2025, 9, 30, 8, 51), "5a4b3c2d1e0f")), 1):
+        guid = f"{{7A0{n}C2D3-4E5F-4A6B-8C7D-9E0F1A2B3C4D}}"
+        galaxy = f"{nl}\\Profiles\\{guid}"
+        sw.value(galaxy, "ProfileName", "Galaxy S22 5G" + (f" {n}" if n > 1 else ""))
+        sw.value(galaxy, "Description", "Galaxy S22 5G")
+        sw.value(galaxy, "NameType", 71)
+        sw.value(galaxy, "DateCreated", _systemtime_local(joined), REG_BINARY)
+        sw.value(galaxy, "DateLastConnected", _systemtime_local(left), REG_BINARY)
+        gsig = f"{nl}\\Signatures\\Unmanaged\\010103000F0000F0080000000F0000F0{n:08X}"
+        sw.value(gsig, "ProfileGuid", guid)
+        sw.value(gsig, "DefaultGatewayMac", bytes.fromhex(mac), REG_BINARY)
     (cfg / "SOFTWARE").write_bytes(sw.build())
 
     build_phonelink_profile(root / "Users", "alex", "9a6e2c1f-4b3d-4e5a-8f70-2d1c3b4a5e6f",

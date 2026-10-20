@@ -85,6 +85,14 @@ registry, `data/oui.tsv.gz`) or that it is randomised, the country of a phone
 number or SIM, the format of an Apple serial, the marketing name of an Apple
 model identifier. `devices.json` carries each identifier's decoded meaning.
 
+Device names come from the same tables: an Android model code is looked up in
+Google Play's device list (`data/android_models.tsv.gz`, CPH2585 is a OnePlus
+12R), a USB vendor ID in the Linux USB ID repository (`data/usb_vendors.tsv.gz`),
+and phone names inside free text (hotspot and device names) are matched against
+the marketing names. Among a device's names, the most phone-like wins ("Sujay's
+iPhone" over "Localhost"). `scripts/build_device_data.py` rebuilds both tables
+reproducibly from the published lists.
+
 ## Recovered data (`connected_phone_forensics/content.py`)
 
 Sorts the records into messages, calls, contacts, photos and files,
@@ -94,6 +102,28 @@ deletion. It works on the plain records of `observations.jsonl`, so the app's
 Recovered data page, the workbook and the PDF summary show the same rows for a
 fresh scan or a reopened case; each item keeps its source file, locator and
 the index of its record.
+
+`hotspot_networks()` groups the phones known only as Wi-Fi hotspots by network
+name. Android and recent iPhones give their hotspot a new random BSSID each
+time, so one phone shows as several access points; each stays one row with its
+own times and Windows profile, under its network.
+
+## Saving recovered files (`connected_phone_forensics/export.py`)
+
+Copies the files a scan saved (in the case's `exports/`) into a new folder,
+never over an existing file: each copy is hashed (SHA-256, MD5) while written,
+read back and hashed again, compared with the hash recorded when the scan
+extracted it, marked read-only and given its record's time. `manifest.csv`,
+`manifest.json`, `SHA256SUMS.txt` and a Read me describe every file. The app's
+*Save files* menu and `cpf save-files` both call it.
+
+## Wi-Fi locations (`connected_phone_forensics/geo.py`)
+
+An opt-in query to Apple's Wi-Fi location service (`gs-loc.apple.com/clls/wloc`,
+a small protobuf over HTTPS) for one access point address at a time. It is
+only run when the examiner confirms; randomised (locally administered)
+addresses are never sent; each query and answer is appended to the case's
+`online-lookups.jsonl`.
 
 ## Outputs (`connected_phone_forensics/output/`)
 
@@ -163,14 +193,22 @@ the PDF summary.
 * `models.py`: table models filter and sort a list of row indexes in plain
   Python rather than through `QSortFilterProxyModel`, so 100,000-record
   timelines filter in about a tenth of a second and only visible rows are
-  formatted.
+  formatted. Each column can carry a filter of its own (`ColumnFilter`: a
+  condition and/or the values to keep), combined with the page's filters.
+* `colfilter.py`: the spreadsheet-style filters: a header with a filter button
+  per column, the panel it opens (sort, condition, value checklist), the chips
+  of the filters in force, and the cell menu (show only or hide a value).
+* `hero.py`: the banners of New scan and the Overview, and the drawn phone and
+  laptop exchanging records (animated only while on screen).
 * `theme.py` / `widgets.py`: one palette per theme; widgets read colours
-  when they paint, so switching theme needs no rebuild. Connection colours
+  when they paint, so switching theme needs no rebuild. Widgets that react to
+  a theme change register with their owner and are dropped when it is
+  deleted, so pages that rebuild parts of themselves never stop a change. Connection colours
   are a colour-blind-checked categorical palette and always sit next to a
   text label.
 * `pages/`: New scan (an evidence folder or this computer, live), scan
-  progress, Overview, Devices (with the drawn phone), Recovered data,
-  Timeline, Coverage, Issues.
+  progress, Overview, Devices (phones with the drawn phone, hotspot networks,
+  other devices), Recovered data, Timeline, Coverage, Issues, Guide.
 
 ## Packaging and releases (`packaging/`, `.github/workflows/release.yml`)
 
@@ -180,6 +218,9 @@ the PDF summary.
   (from a spec with two executables sharing their libraries). Parsers are
   discovered at run time, so their package is collected explicitly, as are
   the package's data files; Qt modules the tool does not use are left out.
+  LICENSE, THIRD-PARTY-NOTICES.md, the license texts in `licenses/`, Python's
+  license and each bundled package's own license files travel with every
+  program (beside the portable programs, inside the single-file ones).
 * `packaging/smoke_test.py` runs the built executables, single-file and
   portable: the CLI must list every parser and scan the demo case into a
   report, PDF summary and workbook; the desktop app runs the demo case

@@ -8,8 +8,8 @@ abstract: >-
 type: software
 authors:
   - alias: sujayadkesar
-license: MIT
-version: 0.2.0
+license: PolyForm-Noncommercial-1.0.0
+version: 0.3.0
 date-released: "2026-10-20"
 repository-code: "https://github.com/sujayadkesar/connected-phone-forensics"
 keywords:

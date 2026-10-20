@@ -10,27 +10,32 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPixmap
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QImage, QPainter, QPainterPath, QPixmap
 from PySide6.QtWidgets import (
-    QCheckBox,
+    QAbstractItemView,
     QFrame,
     QHeaderView,
     QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QMessageBox,
+    QProgressDialog,
     QSplitter,
     QStackedWidget,
     QWidget,
 )
 
 from ... import content
+from ... import export as file_export
 from ...content import CATEGORIES
 from .. import jobs
 from ..casedata import CaseData
+from ..colfilter import FilterBar, install_cell_menu, selected_rows
 from ..icons import icon
 from ..models import Column, RecordModel, make_table
+from ..theme import mix
 from ..widgets import (
     THEME,
     Card,
@@ -44,6 +49,7 @@ from ..widgets import (
     breakable,
     button,
     channel_color_fn,
+    choose_folder,
     choose_save_file,
     clear_layout,
     copy_text,
@@ -61,6 +67,10 @@ from .timeline import FilterCombo
 SERIES = {"messages": 0, "calls": 2, "contacts": 6, "media": 1, "notifications": 3, "apps": 4, "connections": 5}
 IMAGE_TYPES = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
 THUMB = 148
+PICTURE = 26              # contact photos and app icons in the table
+PICTURE_CATEGORIES = ("contacts", "apps")
+STATUS_FILTERS = [("present", "Present (live records)"), ("deleted", "Deleted, recovered"),
+                  ("files", "With a saved file")]
 
 
 def _color(key: str) -> str:
@@ -86,7 +96,7 @@ class CategoryTile(QFrame):
         self.setLayout(vbox(hbox(self.badge, "stretch"), self.count, self.title, self.sub, "stretch", spacing=1,
                             margins=(14, 12, 14, 12)))
         self.setMinimumWidth(104)
-        THEME.on_change(self.badge.update)
+        THEME.on_change(self.badge.update, self)
 
     def _paint_badge(self, _e) -> None:
         p = QPainter(self.badge)
@@ -145,8 +155,12 @@ def _time_width() -> int:
     return QFontMetrics(mono_font()).horizontalAdvance("2025-10-11 19:31:00") + 30
 
 
-def _table_columns(cat) -> list[Column]:
+def _table_columns(cat, picture=None) -> list[Column]:
     cols: list[Column] = []
+    if picture is not None and cat.key in PICTURE_CATEGORIES:
+        cols.append(Column("", lambda r: "", 46, picture=picture, filterable=False,
+                           sort_key=lambda r: 0 if r.get("file") else 1,
+                           tip=lambda r: None if r.get("file") else "No picture was saved for this item"))
     by_key = {c.key: c for c in cat.columns}
     first = True
     for key in TABLE_KEYS[cat.key]:
@@ -155,13 +169,14 @@ def _table_columns(cat) -> list[Column]:
         if key == "dir":
             cols.append(Column("", lambda r: "", 40, sort_key=lambda r: r.get("direction") or "",
                                icon=lambda r: _DIRECTION_ICON.get(r.get("direction") or ""),
-                               tip=lambda r: (r.get("direction") or "").capitalize() or None))
+                               tip=lambda r: (r.get("direction") or "").capitalize() or None,
+                               value=lambda r: (r.get("direction") or "").capitalize(), name="Direction"))
             continue
         c = by_key[key]
         tip = (lambda r: r.get("status") or None) if mark else None
         if c.kind == "time":
             cols.append(Column(c.title, lambda r: content.format_time(r.get("time")) or "—", _time_width() + 22,
-                               mono=True, sort_key=lambda r: r.get("time") or "", icon=mark, tip=tip))
+                               mono=True, sort_key=lambda r: r.get("time") or "", icon=mark, tip=tip, kind="time"))
         elif c.key == "status":
             cols.append(Column(c.title, lambda r: r.get("status") or "", 150,
                                chip=lambda r: (r["status"], tone_fn("warn"), "ph.warning") if r.get("status")
@@ -172,7 +187,7 @@ def _table_columns(cat) -> list[Column]:
         elif c.kind == "number":
             cols.append(Column(c.title, lambda r, k=c.key: "" if r.get(k) in (None, "") else f"{r[k]:,}"
                                if isinstance(r.get(k), int) else str(r[k]), 104, align_right=True,
-                               sort_key=lambda r, k=c.key: _num(r.get(k))))
+                               sort_key=lambda r, k=c.key: _num(r.get(k)), kind="number"))
         elif c.kind == "long":
             cols.append(Column(c.title, lambda r, k=c.key: " ".join(str(r.get(k) or "").split()), None,
                                tooltip=True))
@@ -188,6 +203,79 @@ def _num(v):
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _size(n: int) -> str:
+    for unit in ("bytes", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:,} {unit}" if unit == "bytes" else f"{n:,.1f} {unit}"
+        n /= 1024
+    return f"{n:,.1f} GB"
+
+
+def _item_title(r: dict) -> str:
+    return str(r.get("name") or r.get("package") or r.get("party") or "item")
+
+
+def load_image(path: Path) -> QImage:
+    """An image from the case folder (which can be deeper than Windows' 260-character limit)."""
+    from ...evidence import long_path
+
+    try:
+        return QImage.fromData(long_path(path).read_bytes())
+    except OSError:
+        return QImage()
+
+
+def picture(img: QImage, size: int, circle: bool) -> QPixmap:
+    """A contact photo (round, filling the circle) or an app icon (whole, as drawn) at ``size`` points."""
+    px = size * 2
+    canvas = QPixmap(px, px)
+    canvas.fill(Qt.GlobalColor.transparent)
+    p = QPainter(canvas)
+    p.setRenderHints(QPainter.RenderHint.Antialiasing | QPainter.RenderHint.SmoothPixmapTransform)
+    mode = Qt.AspectRatioMode.KeepAspectRatioByExpanding if circle else Qt.AspectRatioMode.KeepAspectRatio
+    scaled = img.scaled(px, px, mode, Qt.TransformationMode.SmoothTransformation)
+    if circle:
+        clip = QPainterPath()
+        clip.addEllipse(QRectF(0, 0, px, px))
+        p.setClipPath(clip)
+    p.drawImage((px - scaled.width()) // 2, (px - scaled.height()) // 2, scaled)
+    p.end()
+    canvas.setDevicePixelRatio(2.0)
+    return canvas
+
+
+def _person_color(name: str) -> str:
+    series = THEME.palette.series
+    return series[sum(map(ord, name or "?")) % len(series)]
+
+
+def initials(name: str, size: int, color: str, circle: bool) -> QPixmap:
+    """A placeholder: the name's initials on a tint of ``color``."""
+    words = [w for w in str(name or "").replace("(", " ").split() if w[:1].isalpha()]
+    text = "".join(w[0] for w in words[:2]).upper() or (str(name).strip()[:1] or "?")
+    px = size * 2
+    canvas = QPixmap(px, px)
+    canvas.fill(Qt.GlobalColor.transparent)
+    p = QPainter(canvas)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor(mix(THEME.palette.surface, color, 0.28)))
+    rect = QRectF(0, 0, px, px)
+    if circle:
+        p.drawEllipse(rect)
+    else:
+        p.drawRoundedRect(rect, px * 0.24, px * 0.24)
+    f = QFont(THEME.fonts.ui if THEME.fonts else QFont())
+    f.setPixelSize(int(px * (0.38 if len(text) > 1 else 0.44)))
+    f.setWeight(QFont.Weight.DemiBold)
+    p.setFont(f)
+    p.setPen(QColor(mix(color, THEME.palette.text, 0.25)))
+    p.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
+    p.end()
+    canvas.setDevicePixelRatio(2.0)
+    return canvas
 
 
 _CHANNEL_KEYS = {v: k for k, v in content.CHANNEL_LABEL.items()}
@@ -206,6 +294,9 @@ class DataPage(QWidget):
         self.current = "messages"
         self._thumbs: dict[str, QIcon] = {}
         self._thumb_token = 0
+        self._pics: dict[tuple, QPixmap] = {}
+        self._loading = False
+        self.last_saved = None  # the last file save's result (see _saved)
 
         self.search = SearchBox("Search messages, names, numbers, apps, files…")
         self.search.search.connect(lambda *_: self._apply())
@@ -214,8 +305,12 @@ class DataPage(QWidget):
         self.f_channel = FilterCombo("All connections", 170)
         for f in (self.f_phone, self.f_channel):
             f.currentIndexChanged.connect(lambda *_: self._apply())
-        self.deleted_only = QCheckBox("Deleted, recovered only")
-        self.deleted_only.toggled.connect(lambda *_: self._apply())
+        self.f_status = FilterCombo("Any status", 150)
+        self.f_status.set_items(STATUS_FILTERS)
+        self.f_status.setToolTip("Present: the record is live in the database. Deleted, recovered: rebuilt from "
+                                 "deleted or older copies. With a saved file: a photo, attachment, contact picture "
+                                 "or app icon was saved.")
+        self.f_status.currentIndexChanged.connect(lambda *_: self._apply())
         self.clear_btn = button("Clear", "Ghost", "ph.x", self._clear)
         self.export_btn = button("Export", None, "ph.export")
         menu = QMenu(self.export_btn)
@@ -225,6 +320,12 @@ class DataPage(QWidget):
         menu.addAction("Open the case workbook (every phone)", lambda: self._open_output("workbook.xlsx"))
         menu.addAction("Open the PDF summary", lambda: self._open_output("summary.pdf"))
         self.export_btn.setMenu(menu)
+        self.save_btn = button("Save files", None, "ph.floppy-disk", None,
+                               "Save recovered photos, attachments, contact pictures and app icons as verified "
+                               "copies, with a manifest and SHA-256 list")
+        self.save_menu = QMenu(self.save_btn)
+        self.save_menu.aboutToShow.connect(self._fill_save_menu)
+        self.save_btn.setMenu(self.save_menu)
 
         self.tiles: dict[str, CategoryTile] = {}
         tiles_row = hbox(spacing=10)
@@ -235,12 +336,17 @@ class DataPage(QWidget):
             tiles_row.addWidget(t, 1)
 
         # table / grid
-        self.models = {c.key: RecordModel(_table_columns(c), row_tint=lambda r: "warn" if r.get("status") else None)
+        self.models = {c.key: RecordModel(_table_columns(c, self._picture),
+                                          row_tint=lambda r: "warn" if r.get("status") else None)
                        for c in CATEGORIES}
+        for m in self.models.values():
+            m.filters_changed.connect(self._filters_changed)
         self.tables = {}
         self.views = QStackedWidget()
         for c in CATEGORIES:
-            tv = make_table(self.models[c.key])
+            tv = make_table(self.models[c.key], filters=True)
+            tv.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+            install_cell_menu(tv, self._row_menu)
             header = tv.horizontalHeader()
             for i, col in enumerate(self.models[c.key].columns):
                 if col.width is None:  # long text: a generous width; the last column takes what is left
@@ -259,7 +365,10 @@ class DataPage(QWidget):
         self.grid.setMovement(QListView.Movement.Static)
         self.grid.setWordWrap(True)
         self.grid.setUniformItemSizes(True)
+        self.grid.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.grid.currentRowChanged.connect(self._grid_selected)
+        self.grid.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.grid.customContextMenuRequested.connect(self._grid_menu)
         self.views.addWidget(self.grid)
         self.layout_toggle = Segmented([("list", "List"), ("grid", "Grid")])
         self.layout_toggle.changed.connect(lambda *_: self._apply())
@@ -273,6 +382,10 @@ class DataPage(QWidget):
         head = hbox(self.table_title, self.table_note, "stretch", self.layout_toggle, spacing=10,
                     margins=(16, 12, 12, 10))
         table_card.body.addLayout(head)
+        self.filter_bar = FilterBar(self.tables[self.current])
+        bar_box = QWidget()
+        bar_box.setLayout(vbox(self.filter_bar, margins=(14, 0, 14, 8)))
+        table_card.body.addWidget(bar_box)
         table_card.body.addWidget(self.view_stack, 1)
         table_card.layout().setContentsMargins(1, 1, 1, 1)
 
@@ -298,12 +411,19 @@ class DataPage(QWidget):
         lay = vbox(spacing=12, margins=(28, 24, 28, 24))
         intro = label("What the computers held of each phone's own data: messages, calls, contacts, photos and "
                       "files, notifications, apps and connection records.", "Muted", wrap=True)
-        lay.addLayout(hbox((vbox(label("Recovered data", "H1"), intro, spacing=2), 1), self.export_btn, spacing=16))
-        lay.addLayout(hbox(self.search, self.f_phone, self.f_channel, self.deleted_only, self.clear_btn, spacing=8))
+        lay.addLayout(hbox((vbox(label("Recovered data", "H1"), intro, spacing=2), 1), self.save_btn, self.export_btn,
+                           spacing=10))
+        lay.addLayout(hbox(self.search, self.f_phone, self.f_channel, self.f_status, self.clear_btn, spacing=8))
         lay.addLayout(tiles_row)
         lay.addWidget(split, 1)
         self.setLayout(lay)
         self._show(None)
+        THEME.on_change(self._theme_changed, self)
+
+    def _theme_changed(self) -> None:
+        self._pics.clear()  # initials are drawn in the theme's colours
+        for k in PICTURE_CATEGORIES:
+            self.tables[k].viewport().update()
 
     # -- data ------------------------------------------------------------------------
 
@@ -311,6 +431,7 @@ class DataPage(QWidget):
         self.case = case
         self.items = content.extract(case.records, case.devices)
         self._thumbs.clear()
+        self._pics.clear()
         for rows in self.items.values():
             for r in rows:
                 r["_search"] = " ".join(str(v) for k, v in r.items()
@@ -322,8 +443,11 @@ class DataPage(QWidget):
         self.f_phone.set_items(phones + extra)
         channels = sorted({r["channel"] for rows in self.items.values() for r in rows if r.get("channel")})
         self.f_channel.set_items([(c, c) for c in channels])
+        self._loading = True
         for k, m in self.models.items():
+            m.clear_column_filters()
             m.set_rows(self.items[k])
+        self._loading = False
         self.search.blockSignals(True)
         self.search.clear()
         self.search.blockSignals(False)
@@ -349,22 +473,27 @@ class DataPage(QWidget):
         self._apply()
 
     def _clear(self, apply: bool = True) -> None:
-        for f in (self.f_phone, self.f_channel):
+        for f in (self.f_phone, self.f_channel, self.f_status):
             f.blockSignals(True)
             f.setCurrentIndex(0)
             f.blockSignals(False)
-        self.deleted_only.blockSignals(True)
-        self.deleted_only.setChecked(False)
-        self.deleted_only.blockSignals(False)
         self.search.blockSignals(True)
         self.search.clear()
         self.search.blockSignals(False)
+        self._loading = True
+        for m in self.models.values():
+            m.clear_column_filters()
+        self._loading = False
         if apply:
+            self._apply()
+
+    def _filters_changed(self) -> None:
+        if not self._loading:
             self._apply()
 
     def _filter(self):
         terms = self.search.text().lower().split()
-        phone, chan, deleted = self.f_phone.value(), self.f_channel.value(), self.deleted_only.isChecked()
+        phone, chan, status = self.f_phone.value(), self.f_channel.value(), self.f_status.value()
         want_dev = None if phone == "__none__" else phone
 
         def keep(r: dict) -> bool:
@@ -372,12 +501,14 @@ class DataPage(QWidget):
                 return False
             if chan and r.get("channel") != chan:
                 return False
-            if deleted and not r.get("status"):
+            if status and not ((status == "deleted" and r.get("status")) or
+                               (status == "present" and not r.get("status")) or
+                               (status == "files" and r.get("file"))):
                 return False
             blob = r["_search"]
             return all(t in blob for t in terms)
 
-        active = bool(terms or phone or chan or deleted)
+        active = bool(terms or phone or chan or status)
         return (keep if active else None), active
 
     def _apply(self) -> None:
@@ -393,12 +524,19 @@ class DataPage(QWidget):
         model = self.models[self.current]
         model.set_filter(keep)
         n, total = len(model.visible), len(model.rows)
+        columns_on = bool(model.column_filters())
+        if columns_on:  # the chosen kind's tile counts what the column filters leave, too
+            self.tiles[self.current].set(n, sum(1 for r in model.visible_rows() if r.get("status")), total)
+        active = active or columns_on
         self.table_title.setText(cat.title)
         self.table_note.setText((f"{n:,} of {total:,}" if active else f"{total:,}") + f"  ·  {cat.description}")
         table = self.tables[self.current]
-        phone_col = TABLE_KEYS[self.current].index("phone")
+        self.filter_bar.view = table
+        self.filter_bar.refresh()
+        offset = 1 if self.current in PICTURE_CATEGORIES else 0
+        phone_col = TABLE_KEYS[self.current].index("phone") + offset
         table.setColumnHidden(phone_col, bool(self.f_phone.value()))
-        self.clear_btn.setVisible(active)
+        self.clear_btn.setVisible(active or any(m.column_filters() for m in self.models.values()))
         is_media = self.current == "media"
         self.layout_toggle.setVisible(is_media)
         grid = is_media and self.layout_toggle.current() == "grid"
@@ -481,6 +619,143 @@ class DataPage(QWidget):
         rows = getattr(self, "_grid_rows", [])
         self._show(rows[row] if 0 <= row < len(rows) else None)
 
+    def _grid_menu(self, pos) -> None:
+        rows = self._selected()
+        if not rows:
+            return
+        menu = QMenu(self.grid)
+        self._row_menu(menu, rows)
+        menu.exec(self.grid.viewport().mapToGlobal(pos))
+
+    # -- pictures (contact photos, app icons) -----------------------------------------------
+
+    def _picture(self, r: dict) -> QPixmap:
+        cat = r.get("category") or ""
+        name = r.get("name") or r.get("package") or ""
+        key = (cat, r.get("file") or "", name)
+        pm = self._pics.get(key)
+        if pm is None:
+            pm = None
+            f = self._file(r)
+            if f is not None and f.suffix.lower() in IMAGE_TYPES:
+                img = load_image(f)
+                if not img.isNull():
+                    pm = picture(img, PICTURE, circle=cat == "contacts")
+            if pm is None:
+                pm = initials(name, PICTURE, _color(cat) if cat != "contacts" else _person_color(name),
+                              circle=cat == "contacts")
+            self._pics[key] = pm
+        return pm
+
+    # -- saving files ---------------------------------------------------------------------
+
+    def _selected(self) -> list[dict]:
+        if self.views.currentWidget() is self.grid:
+            rows = getattr(self, "_grid_rows", [])
+            return [rows[i] for i in sorted({ix.row() for ix in self.grid.selectedIndexes()}) if 0 <= i < len(rows)]
+        return selected_rows(self.tables[self.current])
+
+    def _row_menu(self, menu: QMenu, rows: list[dict]) -> None:
+        files = file_export.with_files(rows)
+        menu.addSeparator()
+        act = menu.addAction(icon("ph.floppy-disk", THEME.palette.text),
+                             f"Save {len(files):,} file{'s' if len(files) != 1 else ''} (verified copies)…",
+                             lambda: self._save(files, "selected items"))
+        act.setEnabled(bool(files))
+
+    def _fill_save_menu(self) -> None:
+        self.save_menu.clear()
+        if self.case is None:
+            return
+        cat = content.BY_KEY[self.current]
+        every = [r for rows in self.items.values() for r in rows]
+        groups = [
+            (f"Selected item{'s' if len(self._selected()) != 1 else ''}", self._selected(), "selected items"),
+            ("Everything shown (the current view)", self.models[self.current].visible_rows(), self._view_title()),
+            (f"Every item in {cat.title}", self.items[self.current], cat.title),
+            ("Every recovered file in the case", every, "all recovered files"),
+        ]
+        head = self.save_menu.addAction("Copies are byte for byte, hash-checked, with a manifest")
+        head.setEnabled(False)
+        for text, rows, title in groups:
+            files = file_export.with_files(rows)
+            act = self.save_menu.addAction(f"{text}: {len(files):,} file{'s' if len(files) != 1 else ''}…",
+                                           lambda f=files, t=title: self._save(f, t))
+            act.setEnabled(bool(files))
+
+    def _save(self, rows: list[dict], what: str) -> None:
+        files = file_export.with_files(rows)
+        if not self.case or not self.case.outdir or not files:
+            Toast.show_for(self, "None of these items has a saved file")
+            return
+        start = str(Path(self.case.outdir).parent)
+        parent = choose_folder(self, "Save the files in… (a new folder is made inside)", start)
+        if not parent:
+            return
+        case_dir, meta = Path(self.case.outdir), dict(self.case.case)
+        name = meta.get("case") or "Case"
+        title = f"{name} - {what}"
+        dlg = QProgressDialog(f"Saving {len(files):,} file{'s' if len(files) != 1 else ''}: copying, hashing and "
+                              "checking each one…", "Cancel", 0, len(files), self)
+        dlg.setWindowTitle("Saving files")
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.setMinimumDuration(600)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        where: dict = {}
+
+        def work(job):
+            def step(n: int, total: int) -> None:
+                job.progress.emit({"n": n, "total": total})
+
+            res = file_export.save_files(case_dir, files, Path(parent), title=title, case=meta, progress=step,
+                                         cancel=job.cancel_event)
+            where["folder"] = res.folder
+            return res
+
+        def finished(res) -> None:
+            dlg.close()
+            self._saved(res)
+
+        def cancelled() -> None:
+            dlg.close()
+            Toast.show_for(self, "Saving cancelled; the files copied so far are listed in the folder's manifest",
+                           4000)
+            if where.get("folder"):
+                self.window_.open_path(where["folder"])
+
+        def failed(msg: str, _details: str) -> None:
+            dlg.close()
+            Toast.show_for(self, f"Saving failed: {msg}", 5000)
+
+        job = jobs.run(work, done=finished, failed=failed, cancelled=cancelled,
+                       progress=lambda ev: dlg.setValue(int(ev.get("n", 0))))
+        dlg.canceled.connect(job.cancel)
+
+    def _saved(self, result) -> None:
+        n, size = len(result.saved), result.total_bytes
+        lines = [f"Saved {n:,} file{'s' if n != 1 else ''} ({_size(size)}) to:", str(result.folder), ""]
+        if result.mismatched:
+            lines.append(f"{len(result.mismatched):,} file(s) DO NOT match the hash recorded at the scan; "
+                         "manifest.csv lists them.")
+        elif n:
+            lines.append("Every copy matches the hash recorded when the scan extracted it, and was read back "
+                         "from the disk to check the write.")
+        if result.skipped:
+            lines.append(f"{len(result.skipped):,} item(s) were not saved; manifest.json says why.")
+        lines += ["", "The folder holds manifest.csv and manifest.json (each file's phone, record time, status, "
+                      "source and hashes), SHA256SUMS.txt and a Read me.txt. The copies are read-only."]
+        box = QMessageBox(self)
+        box.setWindowTitle("Files saved")
+        box.setIcon(QMessageBox.Icon.Warning if result.mismatched else QMessageBox.Icon.Information)
+        box.setText("\n".join(lines))
+        open_btn = box.addButton("Open the folder", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        box.buttonClicked.connect(lambda b: self.window_.open_path(result.folder) if b is open_btn else None)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self.last_saved = result
+        box.open()  # not exec(): the app keeps running behind it
+
     # -- detail ----------------------------------------------------------------------
 
     def _show(self, r: dict | None) -> None:
@@ -508,15 +783,20 @@ class DataPage(QWidget):
 
         f = self._file(r)
         if f is not None and f.suffix.lower() in IMAGE_TYPES:
-            img = QImage(str(f))
+            img = load_image(f)
             if not img.isNull():
                 pic = label("")
-                pm = QPixmap.fromImage(img.scaled(640, 640, Qt.AspectRatioMode.KeepAspectRatio,
-                                                  Qt.TransformationMode.SmoothTransformation))
-                pm.setDevicePixelRatio(2.0)
+                natural = (img.width(), img.height())
+                most = 192 if r["category"] in PICTURE_CATEGORIES else 640  # icons and faces: small
+                if img.width() > most or img.height() > most:
+                    img = img.scaled(most, most, Qt.AspectRatioMode.KeepAspectRatio,
+                                     Qt.TransformationMode.SmoothTransformation)
+                pm = QPixmap.fromImage(img)
+                pm.setDevicePixelRatio(2.0 if max(img.width(), img.height()) > most // 2 else 1.0)  # small: as is
                 pic.setPixmap(pm)
                 pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
                 pic.setObjectName("Preview")
+                pic.setToolTip(f"{natural[0]} × {natural[1]} pixels as saved")
                 self.detail_lay.addWidget(pic)
 
         kv = KeyValueGrid()
@@ -541,6 +821,11 @@ class DataPage(QWidget):
                                      lambda p=f: self.window_.open_path(p.parent)))
         actions.addStretch(1)
         self.detail_lay.addLayout(actions)
+        if f is not None:
+            self.detail_lay.addWidget(button("Save a verified copy…", "Ghost", "ph.floppy-disk",
+                                             lambda x=r: self._save([x], _item_title(x)),
+                                             "Copy this file byte for byte into a new folder, with its hashes "
+                                             "checked and a manifest"))
 
         self.detail_lay.addSpacing(4)
         self.detail_lay.addWidget(overline("Source"))
@@ -573,8 +858,12 @@ class DataPage(QWidget):
             bits.append(self.f_phone.currentText().split("  ·  ")[0])
         if self.f_channel.value():
             bits.append(self.f_channel.currentText())
-        if self.deleted_only.isChecked():
-            bits.append("deleted, recovered")
+        if self.f_status.value():
+            bits.append(self.f_status.currentText().lower())
+        model = self.models[self.current]
+        for col, flt in sorted(model.column_filters().items()):
+            c = model.columns[col]
+            bits.append(f"{c.label} {flt.describe(c.kind)}")
         if self.search.text().strip():
             bits.append(f"“{self.search.text().strip()}”")
         return " · ".join(bits)

@@ -10,10 +10,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QPainter, QRadialGradient
-from PySide6.QtWidgets import QFrame, QListWidget, QListWidgetItem, QSplitter, QWidget
+from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
+from PySide6.QtWidgets import QFrame, QListWidget, QListWidgetItem, QMessageBox, QSplitter, QWidget
 
 from ... import content, phoneart
+from .. import jobs, theme
 from ..casedata import (
     CLASS_LABEL,
     ID_LABEL,
@@ -23,7 +24,7 @@ from ..casedata import (
     fmt_time,
     os_label,
 )
-from ..icons import device_icon
+from ..icons import device_badge, device_icon, icon
 from ..models import Column, RecordModel, make_table
 from ..widgets import (
     THEME,
@@ -38,6 +39,7 @@ from ..widgets import (
     PageScroll,
     SearchBox,
     Segmented,
+    Toast,
     breakable,
     button,
     channel_color_fn,
@@ -70,7 +72,7 @@ class PhoneView(QWidget):
         super().__init__()
         self.look = look
         self.setFixedSize(250, 470)
-        THEME.on_change(self.update)
+        THEME.on_change(self.update, self)
 
     def paintEvent(self, _e) -> None:  # noqa: N802
         p = QPainter(self)
@@ -118,15 +120,92 @@ class IdentifierRow(QWidget):
         self.setLayout(lay)
 
 
+class ChannelBadge(QWidget):
+    """An icon on a rounded square tinted with a connection type's colour (USB, Bluetooth...)."""
+
+    def __init__(self, icon_name: str, channel: str | None, size: int = 36, tone: str = "muted"):
+        super().__init__()
+        self.icon_name, self.channel, self.tone = icon_name, channel, tone
+        self.setFixedSize(size, size)
+        THEME.on_change(self.update, self)
+
+    def _color(self) -> QColor:
+        p = THEME.palette
+        return QColor(theme.channel_color(p, self.channel) if self.channel else getattr(p, self.tone))
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        c = self._color()
+        bg = QColor(c)
+        bg.setAlpha(48)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(bg)
+        p.drawRoundedRect(QRectF(self.rect()), self.width() / 4, self.width() / 4)
+        m = self.width() * 0.24
+        icon(self.icon_name, c.name()).paint(p, self.rect().adjusted(int(m), int(m), -int(m), -int(m)))
+
+
 class DeviceItem(QWidget):
     def __init__(self, d: dict):
         super().__init__()
-        badge = IconBadge(device_icon(d.get("device_class")), "ok" if d.get("confirmed") else "warn", 34)
-        name = label(d.get("label") or d["id"], "H3")
+        icon_name, channel = device_badge(d)
+        badge = ChannelBadge(icon_name, channel, 36)
+        badge.setToolTip(f"Mostly seen over {channel_label(channel)}" if channel else
+                         CLASS_LABEL.get(d.get("device_class") or "", ""))
+        name = label(breakable(d.get("label") or d["id"]), "H3", wrap=True)  # long names wrap, not cut
         name.setMinimumWidth(10)
-        sub = label(device_summary(d), "Small")
-        self.setLayout(hbox(badge, (vbox(name, sub, spacing=1), 1), spacing=11, margins=(10, 8, 12, 8)))
+        state = "" if d.get("confirmed") else "  ·  weak identifiers only"
+        sub = label(device_summary(d).replace(" · confirmed", "").replace(" · weak identifiers only", "") + state,
+                    "Small")
+        chans = " · ".join(channel_label(c["channel"]) for c in (d.get("channels") or [])[:3])
+        ch = label(chans, "Faint")
+        self.setLayout(hbox(badge, (vbox(name, sub, ch, spacing=1), 1), spacing=11, margins=(10, 8, 12, 8)))
         self.setToolTip(f"{d['id']} · {d.get('observation_count', 0)} records")
+
+
+class HotspotItem(QWidget):
+    """A hotspot network in the list: its name, how many access points, when last joined."""
+
+    def __init__(self, net: dict):
+        super().__init__()
+        badge = ChannelBadge("ph.wifi-high", "wifi_hotspot", 36)
+        name = label(f"“{net['ssid']}”", "H3")
+        name.setMinimumWidth(10)
+        n = len(net["sessions"])
+        likely = net["likely_phone"] or {"ios": "iPhone", "android": "Android phone"}.get(net["os"], "unknown phone")
+        sub = label(f"{likely} · {n} access point{'s' if n != 1 else ''}", "Small")
+        last = label(f"last joined {fmt_time(net['last'], False)} UTC" if net["last"] else "", "Faint")
+        self.setLayout(hbox(badge, (vbox(name, sub, last, spacing=1), 1), spacing=11, margins=(10, 8, 12, 8)))
+
+
+class HotspotArt(QWidget):
+    """A phone broadcasting Wi-Fi: arcs over a small phone, in the hotspot colour."""
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedSize(220, 220)
+        THEME.on_change(self.update, self)
+
+    def paintEvent(self, _e) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        c = QColor(theme.channel_color(THEME.palette, "wifi_hotspot"))
+        glow = QRadialGradient(QPointF(110, 120), 110)
+        g = QColor(c)
+        g.setAlpha(55 if THEME.palette.dark else 35)
+        glow.setColorAt(0, g)
+        g.setAlpha(0)
+        glow.setColorAt(1, g)
+        p.fillRect(self.rect(), glow)
+        for i, r in enumerate((86, 64, 42)):
+            pen = QPen(QColor(c.red(), c.green(), c.blue(), 110 + i * 50), 7)
+            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+            p.setPen(pen)
+            p.drawArc(QRectF(110 - r, 112 - r, 2 * r, 2 * r), 45 * 16, 90 * 16)
+        phone = QRectF(88, 112, 44, 84)
+        look = phoneart.PhoneLook(phoneart.PUNCH_HOLE, "", "", "", minimal=True)
+        phoneart.paint_phone(p, phone, look, shadow=False)
 
 
 class DevicesPage(QWidget):
@@ -139,11 +218,11 @@ class DevicesPage(QWidget):
         # list
         left = QFrame()
         left.setObjectName("Card")
-        left.setMinimumWidth(320)
-        left.setMaximumWidth(420)
+        left.setMinimumWidth(360)
+        left.setMaximumWidth(440)
         self.search = SearchBox("Search name, identifier, computer")
         self.search.search.connect(lambda *_: self._fill())
-        self.scope = Segmented([("phones", "Phones"), ("all", "All"), ("other", "Other")])
+        self.scope = Segmented([("phones", "Phones"), ("hotspots", "Hotspots"), ("other", "Other"), ("all", "All")])
         self.scope.changed.connect(lambda *_: self._fill())
         self.list = QListWidget()
         self.list.setVerticalScrollMode(QListWidget.ScrollMode.ScrollPerPixel)
@@ -180,9 +259,10 @@ class DevicesPage(QWidget):
         self.search.clear()
         self.search.blockSignals(False)
         self.scope.set_count("phones", len(case.phones))
+        self.scope.set_count("hotspots", len(case.hotspots))
         self.scope.set_count("all", len(case.devices))
         self.scope.set_count("other", len(case.others))
-        self.scope.select("phones" if case.phones else "all")
+        self.scope.select("phones" if case.phones else "hotspots" if case.hotspots else "all")
         self._fill()
 
     def _matches(self, d: dict, q: str) -> bool:
@@ -197,13 +277,34 @@ class DevicesPage(QWidget):
         if not self.case:
             return
         scope = self.scope.current()
-        pool = self.case.phones if scope == "phones" else self.case.others if scope == "other" else self.case.devices
         q = self.search.text().strip()
-        shown = [d for d in pool if self._matches(d, q)]
         keep = self.current
         self.list.blockSignals(True)
         self.list.clear()
         select_row = 0
+        if scope == "hotspots":
+            shown = [n for n in self.case.hotspots if not q or all(
+                t in " ".join([n["ssid"], n["likely_phone"]] + [s["bssid"] for s in n["sessions"]]).lower()
+                for t in q.lower().split())]
+            for i, net in enumerate(shown):
+                item = QListWidgetItem()
+                item.setData(Qt.ItemDataRole.UserRole, f"net:{net['ssid']}")
+                w = HotspotItem(net)
+                item.setSizeHint(QSize(0, w.sizeHint().height()))
+                self.list.addItem(item)
+                self.list.setItemWidget(item, w)
+                if keep and (keep == f"net:{net['ssid']}" or keep in net["devices"]):
+                    select_row = i
+            self.list.blockSignals(False)
+            self.list_empty.setVisible(not shown)
+            self.list.setVisible(bool(shown))
+            if shown:
+                self.list.setCurrentRow(select_row)
+            else:
+                self._show(None)
+            return
+        pool = self.case.phones if scope == "phones" else self.case.others if scope == "other" else self.case.devices
+        shown = [d for d in pool if self._matches(d, q)]
         for i, d in enumerate(shown):
             item = QListWidgetItem()
             item.setData(Qt.ItemDataRole.UserRole, d["id"])
@@ -224,21 +325,28 @@ class DevicesPage(QWidget):
     def focus_item(self, device_id: str) -> None:
         if not self.case:
             return
-        if device_id == "__other__":
-            self.scope.select("other")
+        if device_id in ("__other__", "__hotspots__"):
+            self.scope.select("other" if device_id == "__other__" else "hotspots")
             self._fill()
             return
         d = self.case.device(device_id)
         if d is None:
             return
         self.search.clear()
-        is_phone = d in self.case.phones
-        self.scope.select("phones" if is_phone else "other")
+        if d in self.case.hotspot_devices:
+            self.scope.select("hotspots")
+        else:
+            self.scope.select("phones" if d in self.case.phones else "other")
         self.current = device_id
         self._fill()
 
     def _picked(self, item: QListWidgetItem | None, _prev=None) -> None:
-        self._show(item.data(Qt.ItemDataRole.UserRole) if item else None)
+        key = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if isinstance(key, str) and key.startswith("net:"):
+            net = next((n for n in self.case.hotspots if f"net:{n['ssid']}" == key), None) if self.case else None
+            self._show_hotspot(net)
+        else:
+            self._show(key)
 
     # -- detail ----------------------------------------------------------------------
 
@@ -269,6 +377,140 @@ class DevicesPage(QWidget):
             self.detail_lay.addWidget(events)
         self.detail_lay.addStretch(1)
         self.scroll.verticalScrollBar().setValue(0)
+
+    # -- a hotspot network -------------------------------------------------------------
+
+    def _show_hotspot(self, net: dict | None) -> None:
+        clear_layout(self.detail_lay)
+        if net is None:
+            self._show(None)
+            return
+        self.current = f"net:{net['ssid']}"
+        n = len(net["sessions"])
+        likely = net["likely_phone"]
+        os_name = {"ios": "iPhone (iOS)", "android": "Android"}.get(net["os"], "")
+        hero = Card(padding=20)
+        info = vbox(spacing=10)
+        info.addWidget(overline("Hotspot network"))
+        info.addWidget(label(f"“{net['ssid']}”", "H1", wrap=True, select=True))
+        chips = [Chip.channel("wifi_hotspot", f"{n} access point{'s' if n != 1 else ''}")]
+        if likely:
+            chips.append(Chip(f"likely {likely}", None, "ph.device-mobile",
+                              "Inferred from the network name, which the phone's owner can change"))
+        elif os_name:
+            chips.append(Chip(os_name, None, "ph.apple-logo" if net["os"] == "ios" else "ph.android-logo"))
+        if net["randomised"]:
+            chips.append(Chip.status(f"{net['randomised']} randomised", "warn", "ph.shuffle",
+                                     "Locally administered addresses: a new one each time the hotspot is switched "
+                                     "on; they name no maker and no location service records them"))
+        info.addWidget(ChipRow(chips))
+        kv = KeyValueGrid(columns=1)
+        kv.add("First joined", f"{fmt_time(net['first'])} UTC" if net["first"] else "no time recorded")
+        kv.add("Last joined", f"{fmt_time(net['last'])} UTC" if net["last"] else "no time recorded")
+        kv.add("Computers", ", ".join(net["computers"]) or "—")
+        names = sorted({s["names"] for s in net["sessions"] if s["names"]})
+        if names and names != [net["ssid"]]:
+            kv.add("Network names", "; ".join(names))
+        info.addWidget(kv)
+        info.addWidget(label(
+            "A phone known only as a hotspot: the computer saved the network's name and the address of the access "
+            "point (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random address each "
+            "time it is switched on, so one phone appears as several access points with the same name. The same "
+            "name does not prove the same phone.", "Small", wrap=True))
+        info.addStretch(1)
+        row = hbox(HotspotArt(), (info, 1), spacing=24)
+        row.setAlignment(Qt.AlignmentFlag.AlignTop)
+        hero.body.addLayout(row)
+        self.detail_lay.addSpacing(22)
+        self.detail_lay.addWidget(hero)
+
+        sessions = Card("Access points", "One row per access point address, with when the computer joined it.")
+        model = RecordModel([
+            Column("Access point (BSSID)", lambda s: s["bssid"] or "—", 170, mono=True),
+            Column("Maker", lambda s: s["maker"], 190, muted=True, tooltip=True),
+            Column("First joined (UTC)", lambda s: fmt_time(s["first"]), 165, mono=True,
+                   sort_key=lambda s: s["first"] or ""),
+            Column("Last joined (UTC)", lambda s: fmt_time(s["last"]), 165, mono=True,
+                   sort_key=lambda s: s["last"] or ""),
+            Column("Windows profile · addresses", lambda s: " · ".join(x for x in (s["profiles"], s["dhcp"]) if x),
+                   None, tooltip=True),
+        ])
+        model.set_rows(net["sessions"])
+        view = make_table(model)
+        view.setAlternatingRowColors(False)
+        _fit_table(view, len(net["sessions"]))
+        view.doubleClicked.connect(lambda idx: self.window_.go("timeline", {"device": model.row(idx.row())["device"]}))
+        view.setToolTip("Double-click an access point to see its records in the timeline")
+        sessions.body.addWidget(view)
+        self.detail_lay.addWidget(sessions)
+        self.detail_lay.addWidget(self._location_card(net))
+        self.detail_lay.addStretch(1)
+        self.scroll.verticalScrollBar().setValue(0)
+
+    def _location_card(self, net: dict) -> Card:
+        from ... import geo
+
+        card = Card("Where was it?", "An optional online lookup in Apple's Wi-Fi location service.")
+        fixed = [s["bssid"] for s in net["sessions"] if s["bssid"] and not geo.is_randomised(s["bssid"])]
+        if not fixed:
+            card.body.addWidget(label(
+                "Every address here is randomised, so no location service records it: nothing can be looked up, "
+                "and nothing is sent. (A phone's hotspot moves with the phone in any case.)", "Small", wrap=True))
+            return card
+        card.body.addWidget(label(
+            f"{len(fixed)} address(es) are hardware addresses. Apple's location service may hold a position where "
+            "devices saw them. Asking sends each address to Apple over the internet; the lookup is recorded in "
+            "online-lookups.jsonl in the case folder. A position is a lead, not a measurement.", "Small", wrap=True))
+        results = vbox(spacing=6)
+        btn = button("Look up location…", None, "mdi6.map-marker-radius",
+                     lambda: self._lookup(fixed, results, btn))
+        card.body.addLayout(hbox(btn, "stretch"))
+        card.body.addLayout(results)
+        return card
+
+    def _lookup(self, bssids: list[str], results, btn) -> None:
+        from ... import geo
+
+        answer = QMessageBox.question(
+            self, "Send to Apple's location service?",
+            f"This sends {len(bssids)} access point address(es) to Apple (gs-loc.apple.com) to ask where they "
+            "were seen:\n\n" + "\n".join(bssids) + "\n\nApple learns which addresses were asked about and when. "
+            "Make sure your authority covers an online lookup. Each lookup is recorded in the case folder.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        btn.setEnabled(False)
+        btn.setText("Looking up…")
+        case_dir = self.case.outdir if self.case else None
+        examiner = (self.case.case.get("examiner") if self.case else "") or ""
+
+        def work(_job):
+            out = []
+            for b in bssids:
+                try:
+                    loc = geo.locate(b)
+                except OSError as exc:
+                    loc = geo.Location(geo.normalise(b), False, note=f"lookup failed: {exc}")
+                geo.record_lookup(case_dir, loc, examiner=examiner, sent=not geo.is_randomised(b))
+                out.append(loc)
+            return out
+
+        def done(locs) -> None:
+            btn.setText("Look up again")
+            btn.setEnabled(True)
+            clear_layout(results)
+            for loc in locs:
+                if loc.found:
+                    acc = f" (±{loc.accuracy_m} m)" if loc.accuracy_m else ""
+                    row = hbox(label(loc.bssid, "Mono", mono=True),
+                               label(f"{loc.latitude:.6f}, {loc.longitude:.6f}{acc}", None, select=True),
+                               "stretch", button("Open map", "Link", "ph.map-pin",
+                                                 lambda u=loc.map_url: self.window_.open_url(u)), spacing=12)
+                else:
+                    row = hbox(label(loc.bssid, "Mono", mono=True), label(loc.note, "Small"), "stretch", spacing=12)
+                results.addLayout(row)
+
+        jobs.run(work, done=done, failed=lambda msg, _d: (btn.setEnabled(True), btn.setText("Look up location…"),
+                                                           Toast.show_for(self, f"Lookup failed: {msg}", 4000)))
 
     def _items(self) -> dict[str, list[dict]]:
         return self.window_.pages["data"].items

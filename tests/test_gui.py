@@ -224,13 +224,13 @@ def test_recovered_data_page_filters_and_links(app, window, tmp_path):
     shown = page.models["messages"].visible_rows()
     assert shown and all("jordan" in r["_search"] for r in shown)
     page.search.setText("")
-    page.deleted_only.setChecked(True)
+    page.f_status.select("deleted")
     assert {r["text"] for r in page.models["messages"].visible_rows()} == {
         "Bring the documents. Delete this.", "Wipe the laptop tonight"}
     assert page.tiles["calls"].count.text() == "0"  # tiles count what the filters leave
     phone = next(d["id"] for d in case.phones if d["label"] == "Phone line +14155550199")
     window.go("data", {"device": phone, "category": "calls"})
-    assert not page.deleted_only.isChecked() and page.current == "calls"
+    assert not page.f_status.value() and page.current == "calls"
     assert {r["device"] for r in page.models["calls"].visible_rows()} == {phone}
     record = page.models["calls"].visible_rows()[0]["record"]
     window.go("timeline", {"record": record})
@@ -275,3 +275,101 @@ def test_every_icon_name_exists():
             if known is not None and m.group(2) not in known:
                 missing.append(f"{source.name}: {m.group(0)}")
     assert not missing, missing
+
+
+def test_column_filter_conditions_and_value_lists(app):
+    from collections import Counter
+
+    from connected_phone_forensics.gui.models import Column, ColumnFilter, RecordModel
+
+    rows = [{"t": "2025-01-25 10:00:00", "n": 5, "s": "Bank of X"}, {"t": "2025-01-26 09:00:00", "n": 50, "s": "jordan"},
+            {"t": "", "n": None, "s": ""}]
+    m = RecordModel([Column("Time", lambda r: r["t"] or "—", kind="time"),
+                     Column("Num", lambda r: "" if r["n"] is None else f"{r['n']:,}", kind="number"),
+                     Column("Text", lambda r: r["s"])])
+    m.set_rows(rows)
+
+    def shown():
+        return [r["s"] for r in m.visible_rows()]
+
+    for flt, want in ((ColumnFilter("contains", "BANK"), ["Bank of X"]),
+                      (ColumnFilter("not_contains", "bank"), ["jordan", ""]),
+                      (ColumnFilter("begins", "jo"), ["jordan"]), (ColumnFilter("regex", r"^j.*n$"), ["jordan"]),
+                      (ColumnFilter("empty"), [""]), (ColumnFilter("regex", "("), ["Bank of X", "jordan", ""])):
+        m.set_column_filter(2, flt)
+        assert shown() == want, flt
+    assert ColumnFilter("regex", "(").error("text")  # an invalid pattern is reported, not applied
+    m.set_column_filter(2, None)
+    m.set_column_filter(1, ColumnFilter("ge", "10"))
+    assert shown() == ["jordan"]
+    m.set_column_filter(1, None)
+    m.set_column_filter(0, ColumnFilter("before", "2025-01-25"))  # the whole day
+    assert shown() == ["Bank of X"]
+    m.set_column_filter(0, ColumnFilter("after", "2025-01-25 12:00"))
+    assert shown() == ["jordan"]
+    m.set_column_filter(0, None)
+    assert m.column_values(0) == Counter({"2025-01-25": 1, "2025-01-26": 1, "": 1})  # days, as in Excel
+    m.set_column_filter(0, ColumnFilter(values=frozenset({"2025-01-26"})))
+    assert shown() == ["jordan"] and m.column_values(2) == Counter({"jordan": 1})
+    m.clear_column_filters()
+    assert len(m.visible) == 3
+
+
+def test_recovered_data_pictures_filters_and_verified_saving(app, window, tmp_path, monkeypatch):
+    import connected_phone_forensics.gui.pages.data as data_page
+    from connected_phone_forensics.gui.colfilter import FilterPopup
+    from connected_phone_forensics.gui.models import PICTURE_ROLE
+
+    _open_demo_case(app, window, tmp_path)
+    page = window.pages["data"]
+    window.go("data", "contacts")
+    m = page.models["contacts"]
+    rows = m.visible_rows()
+    photo = next(i for i, r in enumerate(rows) if r.get("file"))
+    pm = m.index(photo, 0).data(PICTURE_ROLE)  # the saved photo, drawn round
+    assert pm is not None and not pm.isNull() and pm.devicePixelRatio() == 2.0
+    assert not data_page.initials("Jordan Lee", 26, "#3987e5", circle=True).isNull()  # no photo: initials
+
+    name_col = [c.title for c in m.columns].index("Name")
+    pop = FilterPopup(page.tables["contacts"], name_col)
+    pop.op.setCurrentIndex(pop.op.findData("equals"))
+    pop.text.setText(rows[photo]["name"].upper())
+    pop._apply()
+    assert [r["name"] for r in m.visible_rows()] == [rows[photo]["name"]]
+    assert page.filter_bar.isVisibleTo(page) and page.clear_btn.isVisibleTo(page)
+    page._clear()
+    assert not m.column_filters() and len(m.visible) == len(rows)
+
+    page.f_status.select("files")
+    with_files = m.visible_rows()
+    assert with_files and all(r["file"] for r in with_files)
+    (tmp_path / "saved").mkdir()
+    monkeypatch.setattr(data_page, "choose_folder", lambda *_a: str(tmp_path / "saved"))
+    page._save(with_files, "contact photos")
+    assert _wait(app, lambda: page.last_saved is not None, 60)
+    res = page.last_saved
+    assert len(res.saved) == len({r["file"] for r in with_files}) and not res.mismatched and not res.skipped
+    assert (res.folder / "SHA256SUMS.txt").is_file() and res.folder.parent == tmp_path / "saved"
+
+
+def test_theme_switch_survives_widgets_the_pages_threw_away(app, window, tmp_path):
+    # Moving around rebuilds parts of pages; the widgets they drop must not stop a later theme change
+    # (it once left the light theme applied only to a few icons).
+    from PySide6.QtCore import QCoreApplication, QEvent
+
+    from connected_phone_forensics.gui import theme
+    from connected_phone_forensics.gui.widgets import THEME
+
+    case = _open_demo_case(app, window, tmp_path)
+    for d in case.devices[:6]:
+        window.go("devices", d["id"])
+        app.processEvents()
+    window.go("data", "contacts")
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete.value)  # as the running app would
+    window.apply_theme("light")
+    assert THEME.palette is theme.LIGHT and theme.LIGHT.bg in app.styleSheet()
+    for listener in list(THEME._listeners):  # what is left belongs to live widgets
+        listener()
+    window.apply_theme("dark")
+    assert theme.DARK.bg in app.styleSheet()

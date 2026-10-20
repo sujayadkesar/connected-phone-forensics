@@ -46,6 +46,7 @@ class PhoneLook:
     last_seen: str | None = None
     wallpaper: QImage | None = None
     tablet: bool = False
+    minimal: bool = False        # no status bar or lock-screen text (small drawings)
 
 
 def design_for(device: dict) -> str:
@@ -196,6 +197,10 @@ def paint_phone(p: QPainter, bounds: QRectF, look: PhoneLook, *, font_family: st
             p.drawEllipse(QPointF(screen.left() + screen.width() * cx, screen.top() + screen.height() * cy),
                           screen.width() * rr, screen.width() * rr)
 
+    if look.minimal:
+        p.restore()  # screen clip
+        p.restore()
+        return body
     # status bar and lock-screen text
     fam = font_family or QFont().family()
     white = QColor(255, 255, 255)

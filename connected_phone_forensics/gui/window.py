@@ -35,7 +35,9 @@ NAV = [
     ("timeline", "Timeline", "ph.clock-counter-clockwise"),
     ("coverage", "Coverage", "ph.files"),
     ("issues", "Issues", "ph.warning-circle"),
+    ("guide", "Guide", "ph.book-open"),
 ]
+NAV_SECTIONS = {"overview": "CASE", "guide": "HELP"}  # a heading before these entries
 
 
 class NavButton(QPushButton):
@@ -44,8 +46,8 @@ class NavButton(QPushButton):
         self.setObjectName("Nav")
         self.setCheckable(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumHeight(38)
-        THEME.bind_icon(self, icon_name, "muted", 18)
+        self.setMinimumHeight(42)
+        THEME.bind_icon(self, icon_name, "muted", 19)
         self.count = QLabel("")
         self.count.setObjectName("NavCount")
         self.count.setFixedHeight(20)
@@ -68,20 +70,21 @@ class Sidebar(QFrame):
     def __init__(self, window: MainWindow):
         super().__init__()
         self.setObjectName("Sidebar")
-        self.setFixedWidth(232)
+        self.setFixedWidth(250)
         self.buttons: dict[str, NavButton] = {}
         self.lockup = QLabel()
         self.lockup.setObjectName("Lockup")
         self._render_lockup()
-        THEME.on_change(self._render_lockup)
+        THEME.on_change(self._render_lockup, self)
         brand = hbox(self.lockup, "stretch")
-        lay = vbox(spacing=2, margins=(14, 18, 14, 14))
+        lay = vbox(spacing=3, margins=(14, 20, 14, 14))
         lay.addLayout(brand)
-        lay.addSpacing(14)
-        for i, (key, text, icon_name) in enumerate(NAV):
-            if i == 1:
-                section = label("CASE", "NavSection")
-                lay.addWidget(section)
+        lay.addSpacing(18)
+        for key, text, icon_name in NAV:
+            if key in NAV_SECTIONS:
+                if key != "overview":
+                    lay.addSpacing(6)
+                lay.addWidget(label(NAV_SECTIONS[key], "NavSection"))
             b = NavButton(text, icon_name)
             b.clicked.connect(lambda *_, k=key: window.go(k))
             self.buttons[key] = b
@@ -109,7 +112,7 @@ class Sidebar(QFrame):
         from .icons import svg_pixmap
 
         name = "lockup-two-line-dark.svg" if THEME.palette.dark else "lockup-two-line-light.svg"
-        self.lockup.setPixmap(svg_pixmap(name, 190, ratio=max(2.0, self.devicePixelRatioF())))
+        self.lockup.setPixmap(svg_pixmap(name, 214, ratio=max(2.0, self.devicePixelRatioF())))
 
     def set_case(self, case: CaseData | None) -> None:
         self.case_box.setVisible(case is not None)
@@ -136,6 +139,7 @@ class MainWindow(QMainWindow):
         from .pages.coverage import CoveragePage
         from .pages.data import DataPage
         from .pages.devices import DevicesPage
+        from .pages.guide import GuidePage
         from .pages.home import HomePage
         from .pages.issues import IssuesPage
         from .pages.overview import OverviewPage
@@ -154,7 +158,7 @@ class MainWindow(QMainWindow):
             "new": HomePage(self), "scan": ScanPage(self), "overview": OverviewPage(self),
             "devices": DevicesPage(self), "data": DataPage(self), "timeline": TimelinePage(self),
             "coverage": CoveragePage(self),
-            "issues": IssuesPage(self),
+            "issues": IssuesPage(self), "guide": GuidePage(self),
         }
         for page in self.pages.values():
             self.stack.addWidget(page)
@@ -172,6 +176,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence.StandardKey.New, self, lambda: self.go("new"))
         QShortcut(QKeySequence.StandardKey.Open, self, self.open_results_dialog)
         QShortcut(QKeySequence.StandardKey.Find, self, self.focus_search)
+        QShortcut(QKeySequence(Qt.Key.Key_F1), self, lambda: self.go("guide"))
 
         self.sidebar.set_case(None)
         self.go("new")
@@ -206,8 +211,9 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self, name: str) -> None:
         p = theme.DARK if name == "dark" else theme.LIGHT
+        THEME.palette = p
+        theme.apply(QApplication.instance(), p)  # the style sheet first: nothing after it can stop it
         THEME.set(p)
-        theme.apply(QApplication.instance(), p)
         theme.style_title_bar(self, p)
         THEME.bind_icon(self.sidebar.theme_btn, "ph.sun" if p.dark else "ph.moon", "muted", 17)
         from .icons import app_icon
@@ -303,6 +309,10 @@ class MainWindow(QMainWindow):
     def open_path(self, path: Path | None) -> None:
         if path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+    def open_url(self, url: str | None) -> None:
+        if url:
+            QDesktopServices.openUrl(QUrl(url))
 
     # -- window -------------------------------------------------------------------------
 

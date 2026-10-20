@@ -14,7 +14,6 @@ from Windows, macOS and Linux disk images, triage collections, or the running co
 [![PyPI](https://img.shields.io/pypi/v/connected-phone-forensics?color=2f6bed&label=pypi)](https://pypi.org/project/connected-phone-forensics/)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?logo=python&logoColor=white)](https://github.com/sujayadkesar/connected-phone-forensics#install-with-pip-windows-macos-linux)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555)](https://github.com/sujayadkesar/connected-phone-forensics#quick-start)
-[![License: MIT](https://img.shields.io/badge/license-MIT-1a8f3c)](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/LICENSE)
 
 [![Download for Windows](https://img.shields.io/badge/Download-Windows%20app-2f6bed?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/sujayadkesar/connected-phone-forensics/releases/latest)
 &nbsp;
@@ -55,8 +54,20 @@ Connected Phone Forensics finds that trail and answers three questions:
   registry hives are saved through the registry API, protected files are read with the backup
   privilege, everything is hashed and logged, and the output goes to a USB drive, never to the
   drive being examined. A portable build runs from the USB drive without unpacking anything onto it.
-- **Recovered data at a glance:** messages, calls, contacts, photos and files, notifications and
-  apps per phone, to search, filter by phone and connection, and export to Excel or CSV.
+- **Recovered data at a glance:** messages, calls, contacts with their photos, photos and files,
+  notifications and apps with their icons, per phone; deleted and present records told apart.
+  Search, **filter any column as in Excel** (contains, does not contain, a regular expression,
+  dates, numbers, a checklist of values), and export to Excel or CSV.
+- **Save the files themselves, verified:** the selected items, the current view, a whole kind or
+  everything, copied byte for byte into a new folder, each copy hashed and checked against the hash
+  taken at the scan, marked read-only and given its record's time, with a manifest and a
+  `SHA256SUMS.txt`.
+- **Phones named the way people know them:** "OnePlus 12R (CPH2585)", not a model code or a UUID,
+  from Google Play's device list, USB vendor IDs, and the names people give their phones and
+  hotspots.
+- **Hotspots grouped by network:** a phone known only by its Wi-Fi hotspot is one network with a
+  row per access point (phones use a new random address each time), and an optional, logged lookup
+  of where an access point was seen.
 - **Three reports from every scan:** a detailed, auditable HTML report; a clean **PDF summary** to
   draft a forensic report from; and an **Excel workbook** with a summary sheet and one sheet per
   phone.
@@ -67,32 +78,50 @@ Connected Phone Forensics finds that trail and answers three questions:
   record by hand (`SYSTEM:\ControlSet001\Enum\USB\...\0066`, `table=message rowid=42`).
 - **Read-only and verifiable.** Databases and hives are read from copies, every evidence file
   read is hashed into a manifest, and nothing is skipped silently: unknown formats are reported.
+- **A guide built in:** what each connection leaves on a computer, what can be recovered and when
+  it cannot, how to read the results, and the tool's limits.
 
 ## Screenshots
 
 <table>
   <tr>
-    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/overview.png" alt="Case overview: phones, recovered data at a glance, computers"></td>
-    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/recovered-data.png" alt="Recovered data: messages per phone, with a message recovered after deletion selected"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/overview.png" alt="Case overview: the case name, phones, hotspots, recovered data at a glance"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/column-filter.png" alt="Recovered data: a column filter, as in Excel, on the messages of one phone"></td>
   </tr>
   <tr>
-    <td align="center"><b>Overview</b>: phones, what was recovered, computers, possible matches</td>
-    <td align="center"><b>Recovered data</b>: every message, call, contact, photo and app, with its source</td>
+    <td align="center"><b>Overview</b>: the case at a glance, with its reports</td>
+    <td align="center"><b>Recovered data</b>: filter any column, as in Excel</td>
   </tr>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/live.png" alt="Live acquisition of the running computer, as administrator, with the output on a USB drive"></td>
-    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/recovered-photos-light.png" alt="Photos and files recovered from Phone Link, as a grid, in the light theme"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/new-scan.png" alt="New scan: the evidence folder or this computer, the case name and examiner"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/hotspots.png" alt="A phone known only by its Wi-Fi hotspot: one network, an access point per day it was joined"></td>
   </tr>
   <tr>
-    <td align="center"><b>Live acquisition</b>: examine the running computer, output to a USB drive</td>
-    <td align="center"><b>Photos and files</b>, in the light theme</td>
+    <td align="center"><b>New scan</b>: a folder, or this computer live</td>
+    <td align="center"><b>Hotspots</b>: one network, a row per random access point</td>
   </tr>
   <tr>
     <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/devices-light.png" alt="An Android phone linked with Phone Link, with its recovered wallpaper on the drawn screen"></td>
-    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/timeline.png" alt="Timeline with filters and the provenance of the selected record"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/contacts-light.png" alt="Contacts recovered from Phone Link with their photos, in the light theme"></td>
   </tr>
   <tr>
     <td align="center"><b>Devices</b>: the phone drawn with its recovered wallpaper</td>
+    <td align="center"><b>Contacts</b> with their photos, in the light theme</td>
+  </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/guide.png" alt="The built-in guide: how records become devices"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/live.png" alt="Live acquisition of the running computer, as administrator, with the output on a USB drive"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Guide</b>: how it works, what is recovered and when not, limits</td>
+    <td align="center"><b>Live acquisition</b>: examine the running computer, output to a USB drive</td>
+  </tr>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/recovered-photos-light.png" alt="Photos and files recovered from Phone Link, as a grid, in the light theme"></td>
+    <td><img src="https://raw.githubusercontent.com/sujayadkesar/connected-phone-forensics/main/docs/images/screenshots/timeline.png" alt="Timeline with filters and the provenance of the selected record"></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Photos and files</b>, saved as verified copies</td>
     <td align="center"><b>Timeline</b>: every record with its file, locator and SHA-256</td>
   </tr>
   <tr>
@@ -121,7 +150,7 @@ The executables are not code-signed yet, so SmartScreen may say *Windows protect
 choose **More info → Run anyway**. Check the download against `SHA256SUMS.txt` first:
 
 ```powershell
-certutil -hashfile ConnectedPhoneForensics-0.2.0-windows-x64.exe SHA256
+certutil -hashfile ConnectedPhoneForensics-0.3.0-windows-x64.exe SHA256
 ```
 
 Then click **Run the demo case** to see it work on synthetic data, or drop an evidence folder on
@@ -151,22 +180,23 @@ Pixel touched), scans it and writes the reports to `./demo/report`. Every byte i
 
 | Page | What it shows |
 |---|---|
-| **New scan** | An evidence folder (drop it), or **this computer (live)**; the computers found, case reference, examiner, output folder, parsers |
-| **Overview** | Phones, recovered data at a glance, computers, records by connection type, records that may be the same phone; opens the report, PDF summary and workbook |
-| **Devices** | Each phone drawn as it most likely looks, with its identity; every identifier in full with what it tells; connections with first and last seen; why its records were linked; possible matches |
-| **Recovered data** | Messages, calls, contacts, photos and files, notifications, apps and connection records, filtered by phone, connection, search and *deleted, recovered only*; the selected item in full with its source; export of the rows shown to Excel or CSV |
-| **Timeline** | All records, searchable and filterable by device, connection, computer and parser; provenance of the selected record; CSV export |
+| **New scan** | An evidence folder (drop it), or **this computer (live)**; the computers found, case name, examiner, output folder, parsers |
+| **Overview** | The case name and its reports (HTML, PDF summary, workbook); phones, phone hotspots, recovered data at a glance, computers, records by connection type, records that may be the same phone |
+| **Devices** | Phones, hotspots and other devices, each marked by how it connected. Each phone drawn as it most likely looks, with its identity; every identifier in full with what it tells; connections with first and last seen; why its records were linked; possible matches. Each hotspot network with its access points, the times they were joined, and an optional location lookup |
+| **Recovered data** | Messages, calls, contacts (with photos), photos and files, notifications, apps (with icons) and connection records, filtered by phone, connection, status (present, deleted and recovered, with a saved file), search and per-column filters; right-click a cell to show only or hide its value; the selected item in full with its source; **Save files** as verified copies; export of the rows shown to Excel or CSV |
+| **Timeline** | All records, searchable and filterable by device, connection, computer, parser and per-column filters; provenance of the selected record; CSV export |
 | **Coverage** | Every evidence file read, with status `parsed`, `empty`, `unrecognised` or `error`, and its full note |
 | **Issues** | Parser warnings and errors, with the full message |
+| **Guide** | How the tool works, where phones leave traces, what is recovered and when it is not, the limitations, and every parser |
 
 **Open results folder** reopens any earlier scan. Keyboard: <kbd>Ctrl</kbd>+<kbd>N</kbd> new scan,
 <kbd>Ctrl</kbd>+<kbd>O</kbd> open results, <kbd>Ctrl</kbd>+<kbd>F</kbd> search,
-<kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>7</kbd> switch pages.
+<kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>8</kbd> switch pages, <kbd>F1</kbd> the guide.
 
 ### Command line
 
 ```bash
-cpf scan /mnt/evidence -o case42 --case 42 --examiner "A. Examiner"
+cpf scan /mnt/evidence -o ACME-case --case ACME-Incident-EmpID39323 --examiner "A. Examiner"
 ```
 
 | Command | Purpose |
@@ -174,6 +204,8 @@ cpf scan /mnt/evidence -o case42 --case 42 --examiner "A. Examiner"
 | `cpf scan INPUT -o OUT` | Scan a mounted image, extracted drive or triage collection. Options: `--case`, `--examiner`, `--plugins`, `--workers N`, `--workdir`, `--no-export`, `--no-html`, `--no-pdf`, `--no-xlsx`, `--assume-same` |
 | `cpf live -o OUT` | Acquire this running Windows computer (as administrator), then scan the copy. Options: `--case`, `--examiner`, `--elevate`, `--allow-system-drive`, and those of `scan` |
 | `cpf demo OUT` | Build and scan the synthetic demo case |
+| `cpf save-files RESULTS -o OUT` | Save the recovered files as verified, read-only copies with a manifest. Options: `--kind`, `--device`, `--status present\|deleted` |
+| `cpf locate BSSID…` | Ask Apple's Wi-Fi location service where access points were seen (online; asks first, never sends random addresses). Options: `--yes`, `--case-dir` (logs each lookup), `--json` |
 | `cpf plugins` | List the parsers and how far each has been validated |
 | `cpf targets --format kape\|velociraptor\|list` | Collection targets for exactly the files the parsers read |
 | `cpf validate truth.json OUT` | Score a scan against a ground-truth file |
@@ -196,7 +228,7 @@ phones were connected to it and what they left:
 4. **Start live acquisition.** Or from an administrator terminal:
 
    ```powershell
-   E:\ConnectedPhoneForensics\cpf.exe live -o E:\cases\2026-0142 --case 2026-0142 --examiner "A. Examiner"
+   E:\ConnectedPhoneForensics\cpf.exe live -o E:\cases\ACME-Incident-EmpID39323 --case ACME-Incident-EmpID39323 --examiner "A. Examiner"
    ```
 
 What happens:
@@ -221,8 +253,8 @@ Every scan writes three reports from the same records:
 | Report | For |
 |---|---|
 | `report.html` | The detailed, auditable account: each phone with every identifier decoded, its connections and why its records were linked; recovered data per phone; the full timeline with filters; every file examined and what came of it; the method. Self-contained; works offline. |
-| `summary.pdf` | A short, readable summary to draft a forensic report from: the case at a glance, every phone in one table, then a page per phone with a drawing of it, its identity, identifiers, connections and what was recovered, and a page on method and limits. |
-| `workbook.xlsx` | Excel: a summary sheet (case, recovered data at a glance, the phones with links to their sheets, the computers) and one sheet per phone with its identifiers, connections and a table per kind of recovered data. Every block is an Excel table with sort and filter buttons. |
+| `summary.pdf` | A short, readable summary to draft a forensic report from: the case at a glance, every phone in one table, the phone hotspots joined (a table per network), then a page per phone with a drawing of it, its identity, identifiers, connections and what was recovered, and a page on method and limits. |
+| `workbook.xlsx` | Excel: a summary sheet (case, recovered data at a glance, the phones with links to their sheets, the hotspot networks, the computers), one sheet per phone with its identifiers, connections and a table per kind of recovered data, and a sheet of hotspot networks with every access point. Every block is an Excel table with sort and filter buttons. |
 
 ## What it finds
 
@@ -290,6 +322,7 @@ More in [docs/ARCHITECTURE.md](https://github.com/sujayadkesar/connected-phone-f
 | `manifest.json` | Run metadata, evidence hashes, warnings |
 | `exports/` | Files recovered from the evidence (cached photos, attachments, wallpaper), with their SHA-256 in the records |
 | `acquisition.json`, `.sha256`, `.log`, `collection/` | Live acquisition only (one folder above the report): every item acquired, its hash and the copies |
+| `online-lookups.jsonl` | Only after a Wi-Fi location lookup: each address sent, when, by whom, and the answer |
 
 ## Possible matches and examiner conclusions
 
@@ -316,7 +349,7 @@ what the installed version can parse.
 
 ## Project status
 
-**Early release (0.2).** The tool runs end to end on Windows, macOS and Linux, and every parser has
+**Early release (0.3).** The tool runs end to end on Windows, macOS and Linux, and every parser has
 automated tests, but only three parsers have been checked against real public data and none yet
 against ground-truth data from real phones. A code review in October 2026 found issues that are not
 all fixed yet. Its one critical finding, recovery of *deleted* SQLite rows (Phone Link, Windows
@@ -364,5 +397,6 @@ shows a citation from [CITATION.cff](https://github.com/sujayadkesar/connected-p
 
 ## License
 
-[MIT](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/LICENSE). Provided as is, without warranty: validate results before relying on them in
-legal proceedings.
+See [LICENSE](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/LICENSE); the components it builds on are listed in
+[THIRD-PARTY-NOTICES.md](https://github.com/sujayadkesar/connected-phone-forensics/blob/main/THIRD-PARTY-NOTICES.md). Provided as is, without warranty: validate
+results before relying on them in legal proceedings.

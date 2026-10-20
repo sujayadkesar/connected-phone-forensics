@@ -161,6 +161,87 @@ def _cmd_docs(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_locate(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
+
+    from . import geo
+
+    try:
+        macs = [geo.normalise(b) for b in args.bssid]
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    to_send = [m for m in macs if not geo.is_randomised(m)]
+    if to_send and not args.yes:
+        print(f"This sends {len(to_send)} address(es) to {geo.SERVICE}: Apple learns which addresses were asked "
+              "about, and when. Randomised addresses are never sent.", file=sys.stderr)
+        if not sys.stdin.isatty():
+            print("error: add --yes to send them without asking", file=sys.stderr)
+            return 2
+        if input("Send them? [y/N] ").strip().lower() not in ("y", "yes"):
+            print("nothing was sent", file=sys.stderr)
+            return 1
+    results = []
+    for mac in macs:
+        sent = mac in to_send
+        try:
+            loc = geo.locate(mac)
+        except OSError as exc:  # no connection, timeout, refused
+            loc = geo.Location(mac, False, note=f"the lookup failed: {exc}")
+        geo.record_lookup(args.case_dir, loc, examiner=args.examiner or "", sent=sent)
+        results.append(loc)
+        if not args.json:
+            if loc.found:
+                print(f"{mac}  {loc.latitude:.6f}, {loc.longitude:.6f}  within about {loc.accuracy_m} m  "
+                      f"{loc.map_url}")
+            else:
+                print(f"{mac}  no location ({loc.note})")
+    if args.json:
+        print(json.dumps([{**asdict(r), "map": r.map_url} for r in results], indent=2))
+    if args.case_dir and not args.json:
+        print(f"logged in {Path(args.case_dir) / 'online-lookups.jsonl'}", file=sys.stderr)
+    return 0
+
+
+def _cmd_save_files(args: argparse.Namespace) -> int:
+    from . import content
+    from . import export as file_export
+    from .casedata import CaseData
+
+    try:
+        case = CaseData.load(args.results)
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    items = content.extract(case.records, case.devices)
+    kinds = [k.strip() for k in args.kind.split(",")] if args.kind else list(items)
+    unknown = [k for k in kinds if k not in items]
+    if unknown:
+        print(f"error: unknown kind {', '.join(unknown)} (choose from {', '.join(items)})", file=sys.stderr)
+        return 2
+    rows = [r for k in kinds for r in items[k]]
+    if args.device:
+        rows = [r for r in rows if r.get("device") == args.device]
+    if args.status == "present":
+        rows = [r for r in rows if not r.get("status")]
+    elif args.status == "deleted":
+        rows = [r for r in rows if r.get("status")]
+    files = file_export.with_files(rows)
+    if not files:
+        print("no saved files match", file=sys.stderr)
+        return 1
+    args.output.mkdir(parents=True, exist_ok=True)
+    title = f"{case.title} - " + (", ".join(kinds) if args.kind else "recovered files")
+    res = file_export.save_files(args.results, files, args.output, title=title, case=case.case)
+    print(f"saved {len(res.saved)} file(s), {res.total_bytes:,} bytes, to {res.folder}", file=sys.stderr)
+    if res.mismatched:
+        print(f"warning: {len(res.mismatched)} file(s) differ from the hash recorded at the scan (manifest.csv)",
+              file=sys.stderr)
+    if res.skipped:
+        print(f"{len(res.skipped)} item(s) not saved (manifest.json says why)", file=sys.stderr)
+    return 3 if res.mismatched else 0
+
+
 def _cmd_validate(args: argparse.Namespace) -> int:
     from .validate import render_markdown, validate
 
@@ -185,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("input", type=Path, help="mounted volume, extracted image or collection directory")
     s.add_argument("-o", "--output", type=Path, required=True, help="output directory")
     s.add_argument("--plugins", help="comma-separated plugin ids to run (default: all)")
-    s.add_argument("--case", help="case reference shown in the report")
+    s.add_argument("--case", help="case name shown in the reports (e.g. ACME-Incident-EmpID39323)")
     s.add_argument("--examiner", help="examiner name shown in the report")
     s.add_argument("--workdir", type=Path, help="directory for temporary copies (default: system temp)")
     s.add_argument("--no-html", action="store_true", help="skip the HTML report")
@@ -211,7 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("-o", "--output", type=Path,
                     help="new or empty output folder on another drive (default: a new folder under "
                          "'CPF cases' on the drive this program runs from, or on a removable drive)")
-    lv.add_argument("--case", help="case reference shown in the report")
+    lv.add_argument("--case", help="case name shown in the reports (e.g. ACME-Incident-EmpID39323)")
     lv.add_argument("--examiner", help="examiner name shown in the report")
     lv.add_argument("--elevate", action="store_true",
                     help="if not running as administrator, start again as administrator (UAC prompt)")
@@ -238,6 +319,33 @@ def build_parser() -> argparse.ArgumentParser:
     t = sub.add_parser("targets", help="print collection targets for the files Connected Phone Forensics reads")
     t.add_argument("--format", choices=["list", "kape", "velociraptor"], default="list")
     t.set_defaults(func=_cmd_targets)
+
+    lc = sub.add_parser("locate", help="look up Wi-Fi access points (BSSIDs) in Apple's location service (online)",
+                        description="Ask Apple's Wi-Fi location service where each access point address (BSSID) "
+                                    "has been seen. This is an online query: Apple learns which addresses were "
+                                    "asked about. Randomised (locally administered) addresses are never sent. "
+                                    "A phone's hotspot moves with the phone; fixed routers give the most useful "
+                                    "answers.")
+    lc.add_argument("bssid", nargs="+", help="access point address, e.g. 3c:22:fb:9a:10:4e")
+    lc.add_argument("--yes", action="store_true", help="send without asking")
+    lc.add_argument("--case-dir", type=Path, help="case folder: each lookup is logged in online-lookups.jsonl")
+    lc.add_argument("--examiner", help="examiner name recorded with each lookup")
+    lc.add_argument("--json", action="store_true")
+    lc.set_defaults(func=_cmd_locate)
+
+    sf = sub.add_parser("save-files", help="save recovered photos, attachments, contact pictures and app icons as "
+                                           "verified copies, with a manifest",
+                        description="Copy the files a scan recovered, byte for byte, into a new folder below "
+                                    "OUTPUT. Each copy is hashed while written and read back, compared with the "
+                                    "hash recorded at the scan, marked read-only and given its record's time; "
+                                    "manifest.csv, manifest.json and SHA256SUMS.txt describe every file.")
+    sf.add_argument("results", type=Path, help="output directory of 'cpf scan' (the report folder)")
+    sf.add_argument("-o", "--output", type=Path, required=True, help="where the new folder is made")
+    sf.add_argument("--kind", help="comma-separated: media, contacts, apps, messages... (default: every kind)")
+    sf.add_argument("--device", metavar="DEV-ID", help="only this device's files")
+    sf.add_argument("--status", choices=["any", "present", "deleted"], default="any",
+                    help="present (live records) or deleted, recovered")
+    sf.set_defaults(func=_cmd_save_files)
 
     v = sub.add_parser("validate", help="score scan results against a ground-truth file")
     v.add_argument("truth", type=Path, help="ground-truth JSON (see docs/VALIDATION.md)")

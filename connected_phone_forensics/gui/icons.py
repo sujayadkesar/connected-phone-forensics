@@ -10,8 +10,8 @@ from PySide6.QtGui import QIcon, QPainter, QPixmap
 
 CHANNEL_ICON = {
     "usb": "mdi6.usb", "bluetooth": "ph.bluetooth", "wifi_hotspot": "ph.wifi-high",
-    "usb_tethering": "mdi6.usb-port", "pairing": "ph.handshake", "backup": "ph.archive",
-    "phone_link": "ph.link", "continuity": "ph.arrows-left-right", "account_sync": "ph.cloud",
+    "usb_tethering": "mdi6.usb-port", "pairing": "mdi6.cellphone-key", "backup": "ph.archive",
+    "phone_link": "mdi6.cellphone-link", "continuity": "ph.arrows-left-right", "account_sync": "ph.cloud",
     "messaging_client": "ph.chat-text", "companion_app": "ph.app-window", "developer": "ph.terminal-window",
     "other": "ph.dots-three-circle",
 }
@@ -34,6 +34,22 @@ def icon(name: str, color: str) -> QIcon:
 
 def device_icon(device_class: str | None) -> str:
     return CLASS_ICON.get(device_class or "phone", "ph.device-mobile")
+
+
+def main_channel(d: dict) -> str | None:
+    """The connection that recorded most about a device (it picks the device's badge)."""
+    channels = sorted(d.get("channels") or [], key=lambda c: -int(c.get("observations") or 0))
+    return channels[0]["channel"] if channels else None
+
+
+def device_badge(d: dict) -> tuple[str, str | None]:
+    """(icon, channel) for a device in a list: headphones, computers... by their class; phones by
+    how they connected (USB, Bluetooth, Phone Link, hotspot...)."""
+    cls = d.get("device_class")
+    if cls not in (None, "phone", "tablet"):
+        return CLASS_ICON.get(cls, "ph.cpu"), None
+    ch = main_channel(d)
+    return CHANNEL_ICON.get(ch or "", "ph.device-mobile"), ch
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"

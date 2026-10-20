@@ -70,6 +70,10 @@ def main() -> int:
         folder = tmp / "portable" / "ConnectedPhoneForensics"
         if not (folder / "portable.txt").is_file():
             failures.append("portable: portable.txt is missing")
+        notices = [n for n in ("LICENSE.txt", "THIRD-PARTY-NOTICES.md", "licenses/LGPL-3.0.txt")
+                   if not (folder / n).is_file()]
+        if notices or not list((folder / "licenses" / "packages").glob("*/*")):
+            failures.append(f"portable: license files missing: {notices or 'licenses/packages'}")
         check_cli(folder / "cpf.exe", tmp / "portable-cli-demo", "portable cli", failures)
         check_gui(folder / "ConnectedPhoneForensics.exe", tmp / "portable-gui", "portable gui", failures)
         if sys.platform == "win32":

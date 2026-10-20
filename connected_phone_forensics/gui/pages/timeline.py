@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QComboBox, QPlainTextEdit, QSplitter, QWidget
 from ...output.structured import csv_safe
 from .. import jobs
 from ..casedata import CaseData, channel_label, fmt_time
+from ..colfilter import FilterBar, install_cell_menu
 from ..models import Column, RecordModel, make_table
 from ..widgets import (
     Card,
@@ -84,17 +85,23 @@ class TimelinePage(QWidget):
 
         self.model = RecordModel([
             Column("Time (UTC)", lambda r: fmt_time(r.get("datetime")), 184, mono=True,
-                   sort_key=lambda r: r.get("timestamp")),
+                   sort_key=lambda r: r.get("timestamp"), kind="time"),
             Column("Device", lambda r: r.get("device_label") or "—", 150, tooltip=True),
             Column("Connection", lambda r: channel_label(r.get("channel")), 138,
                    chip=lambda r: (channel_label(r.get("channel")), channel_color_fn(r.get("channel") or ""), None)),
             Column("What the time means", lambda r: r.get("timestamp_desc") or "", 170, muted=True, tooltip=True),
             Column("Details", lambda r: r.get("message") or "", None, tooltip=True),
         ])
-        self.table = make_table(self.model)
+        self.table = make_table(self.model, filters=True)
         self.table.selectionModel().currentRowChanged.connect(lambda cur, _p: self._show(self.model.row(cur.row())))
+        install_cell_menu(self.table)
+        self.model.filters_changed.connect(self._apply)
+        self.filter_bar = FilterBar(self.table)
 
         table_card = Card(padding=0, spacing=0)
+        bar_box = QWidget()
+        bar_box.setLayout(vbox(self.filter_bar, margins=(14, 10, 14, 2)))
+        table_card.body.addWidget(bar_box)
         table_card.body.addWidget(self.table)
         table_card.layout().setContentsMargins(1, 1, 1, 1)
 
@@ -141,7 +148,7 @@ class TimelinePage(QWidget):
         self.search.clear()
         self.search.blockSignals(False)
         self.model.set_rows(case.records)
-        self._apply()
+        self._clear()
 
     def focus_item(self, arg) -> None:
         """``{"device": id}`` filters to a device, ``{"search": text}`` searches, ``{"record": index}``
@@ -173,6 +180,9 @@ class TimelinePage(QWidget):
         self.search.blockSignals(True)
         self.search.clear()
         self.search.blockSignals(False)
+        self.model.filters_changed.disconnect(self._apply)
+        self.model.clear_column_filters()
+        self.model.filters_changed.connect(self._apply)
         if apply:
             self._apply()
 
@@ -198,9 +208,11 @@ class TimelinePage(QWidget):
 
         active = bool(terms or fields)
         self.model.set_filter(keep if active else None)
+        active = active or bool(self.model.column_filters())
         n, total = len(self.model.visible), len(self.model.rows)
         self.count.setText(f"{n:,} of {total:,} records" if active else f"{total:,} records")
         self.clear_btn.setVisible(active)
+        self.filter_bar.refresh()
         self.export_btn.setEnabled(n > 0)
         if n:
             self.table.selectRow(0)

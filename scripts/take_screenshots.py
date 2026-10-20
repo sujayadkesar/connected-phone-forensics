@@ -20,8 +20,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "images" / "screenshots"
 SIZE = (1600, 1000)
-SHOWN_EVIDENCE = r"D:\Cases\2026-0142\Evidence"
-SHOWN_OUTPUT = r"D:\Cases\2026-0142\Results"
+CASE_NAME = "ACME-Incident-EmpID39323"
+SHOWN_EVIDENCE = rf"D:\Cases\{CASE_NAME}\Evidence"
+SHOWN_OUTPUT = rf"D:\Cases\{CASE_NAME}\Results"
 FIELD_PC = {"computer": "FIELD-PC-07", "windows": "Windows 11 Pro 24H2 build 26100", "user": "examiner",
             "admin": True, "system_drive": "C:\\", "profiles": ["C:\\Users\\rkumar", "C:\\Users\\examiner"]}
 USB_DRIVE = {"root": "E:\\", "kind": "removable", "label": "EVIDENCE", "filesystem": "exFAT", "serial": "5A1C22F0",
@@ -51,7 +52,7 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="cpf-shots-"))
     evidence = build_demo_evidence(tmp / "demo")
     events: list[dict] = []
-    result = scan(evidence, case={"case": "2026-0142", "examiner": "A. Examiner"},
+    result = scan(evidence, case={"case": CASE_NAME, "examiner": "A. Examiner"},
                   on_event=events.append, progress=lambda m: events.append({"type": "log", "message": m}),
                   export_dir=tmp / "report" / "exports")
     write_all(result, tmp / "report", pdf=False, xlsx=False)
@@ -66,9 +67,13 @@ def main() -> int:
             app.processEvents()
             time.sleep(0.01)
 
-    def save(window, name: str) -> None:
+    def save(window, name: str, popup=None) -> None:
         pump(0.4)
         shot = window.grab()
+        if popup is not None:  # a popup is a window of its own: draw it where it sits
+            p = QPainter(shot)
+            p.drawPixmap(window.mapFromGlobal(popup.mapToGlobal(popup.rect().topLeft())), popup.grab())
+            p.end()
         framed = QPixmap(shot.size())
         framed.setDevicePixelRatio(shot.devicePixelRatio())
         framed.fill(Qt.GlobalColor.transparent)
@@ -100,7 +105,7 @@ def main() -> int:
     w = window_for("dark")
     home = w.pages["new"]
     home.drop.set_path(evidence)
-    home.case_ref.setText("2026-0142")
+    home.case_ref.setText(CASE_NAME)
     home.examiner.setText("A. Examiner")
     for _ in range(300):
         pump(0.02)
@@ -140,18 +145,38 @@ def main() -> int:
 
     w.show_case(case)
     w.pages["overview"].case_kv.clear()
-    for k, v in (("Case", "2026-0142 · Demo case (synthetic data)"), ("Examiner", "A. Examiner"),
+    for k, v in (("Case", f"{CASE_NAME} · Demo case (synthetic data)"), ("Examiner", "A. Examiner"),
                  ("Evidence", SHOWN_EVIDENCE), ("Output", SHOWN_OUTPUT), ("Tool", f"version {case.tool_version}")):
         w.pages["overview"].case_kv.add(k, v, mono=k in ("Evidence", "Output"))
     save(w, "overview")
     w.go("devices", phone("Alex"))
     save(w, "devices")
+    devices = w.pages["devices"]
+    w.go("devices", "__hotspots__")
+    for i in range(devices.list.count()):
+        if devices.list.item(i).data(Qt.ItemDataRole.UserRole) == "net:Galaxy S22 5G":
+            devices.list.setCurrentRow(i)
+    save(w, "hotspots")
     data = w.pages["data"]
     w.go("data", "messages")
     rows = data.models["messages"].visible_rows()
     deleted = next((i for i, r in enumerate(rows) if r.get("status")), 0)
     data.tables["messages"].selectRow(deleted)
     save(w, "recovered-data")
+    from connected_phone_forensics.gui.colfilter import open_filter
+
+    model = data.models["messages"]
+    party = [c.title for c in model.columns].index("Contact")
+    open_filter(data.tables["messages"], party)
+    pump(0.3)
+    popup = QApplication.activePopupWidget()
+    popup.op.setCurrentIndex(popup.op.findData("contains"))
+    popup.text.setText("Jordan")
+    save(w, "column-filter", popup)
+    popup._apply()
+    pump(0.2)
+    w.go("guide")
+    save(w, "guide")
     w.go("timeline")
     tl = w.pages["timeline"]
     usb = next((i for i, r in enumerate(tl.model.visible_rows()) if r.get("artifact") == "win_usb_phones"), 0)
@@ -171,6 +196,8 @@ def main() -> int:
     data._apply()
     pump(1.5)  # thumbnails load in the background
     save(w, "recovered-photos-light")
+    w.go("data", "contacts")
+    save(w, "contacts-light")
     w.close()
 
     # Two pages of the PDF summary side by side: the cover and a phone page.

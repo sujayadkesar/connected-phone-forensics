@@ -6,6 +6,69 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
+### Added
+
+- **Save files, verified.** On the Recovered data page, *Save files* copies photos, attachments,
+  contact pictures and app icons (the selected items, everything shown, a whole kind, or every file
+  in the case) into a new folder: byte for byte, hashed (SHA-256 and MD5) while written and read
+  back from the disk, compared with the hash taken when the scan extracted each file, marked
+  read-only, and given the time its record holds. `manifest.csv`, `manifest.json`,
+  `SHA256SUMS.txt` and a Read me describe every file: phone, record time, deleted or present, the
+  database and record it came from, and its hashes. Nothing is ever overwritten. From the command
+  line: `cpf save-files`.
+- **Column filters, as in Excel,** on every column of Recovered data and the Timeline: sort, a
+  condition (contains, does not contain, equals, begins or ends with, a regular expression, empty;
+  greater or less than for numbers; on, before or after for times) and a checklist of the values
+  (times grouped by day). Right-click a cell to show only or hide its value, copy it, or save the
+  selected items' files. The filters in force show as chips above the table, and exports carry
+  them in their title.
+- A **status filter** on Recovered data: present (live records), deleted and recovered, or with a
+  saved file. Tables and the photo grid allow selecting several items.
+- **Contact photos and app icons**: Phone Link's contact pictures and app icons are saved by the
+  scan and shown in the tables and the detail panel (initials when there is no picture), with the
+  recently used apps. A photo saved only as a thumbnail says so.
+- **Hotspot networks.** Phones the computer knew only as a Wi-Fi hotspot are grouped by network
+  name: Android and recent iPhones use a new random address each time the hotspot is switched on,
+  so one phone appears as several access points. Each network lists its access points with when
+  they were first and last joined, the Windows profile and the DHCP addresses: on the Devices page
+  (Hotspots), in the PDF summary, in the workbook (a Hotspots sheet) and in report.html.
+- **Wi-Fi location lookup, on request.** On a hotspot's page, or with `cpf locate BSSID`, ask
+  Apple's Wi-Fi location service where an access point was seen. Nothing is sent without
+  confirmation, randomised addresses are never sent, and every query and answer is logged in the
+  case folder (`online-lookups.jsonl`).
+- **Guide** page (F1): how the tool works, where phones leave traces, what is recovered and when it
+  is not, how to read the results, hotspots and locations, saving and reports, the limitations,
+  and every parser with how it has been tested.
+- **Phones named the way people know them.** Android model codes become marketing names (CPH2585
+  is a OnePlus 12R) from Google Play's device list; USB vendor IDs name the maker (from the Linux
+  USB ID repository); phone names inside hotspot and device names are recognised ("Redmi 9i",
+  "Galaxy S22 5G"); and a phone's own name ("Sujay's iPhone") is preferred over generic ones
+  ("Localhost").
+- New scan opens with an animated banner. The Overview shows the case name with its reports, and
+  a tile and a list for phone hotspots. The Devices page separates phones, hotspots and other
+  devices, with an icon for each kind of connection.
+- THIRD-PARTY-NOTICES.md lists the components and data the tool is built on, and their license
+  texts ship with the programs and the package.
+
+### Changed
+
+- *Case reference* is now *Case name* (for example ACME-Incident-EmpID39323): it titles the
+  Overview, the reports and the output folder.
+- The sidebar has a larger logo, larger and bolder navigation, and a Help section.
+- PDF summary: count tiles fit five-digit numbers; phones known only as hotspots are a table per
+  network instead of a page each of unknown fields.
+- The demo case adds a phone known only by its hotspot, joined on three days with three random
+  addresses.
+
+### Fixed
+
+- Switching from the dark to the light theme after working in the app restyled only some icons:
+  widgets the pages had replaced stopped the change part-way. Widgets now unregister themselves
+  when they are deleted, and the style sheet is applied first.
+- Long device names wrap in the device list instead of being cut off.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
@@ -205,7 +268,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.0
 [0.2.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.2.0
 [0.1.3]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.3
 [0.1.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.1.2

@@ -291,8 +291,11 @@ class Doc:
 
     # -- blocks ---------------------------------------------------------------------------
 
-    def section(self, title: str, note: str = "") -> None:
-        self.need(60)
+    def section(self, title: str, note: str = "", keep: float = 64) -> None:
+        """A section heading with its note; ``keep``: room to leave for what follows, so a heading never
+        ends a page alone."""
+        note_h = self.measure(note, "small", self.inner) + 4 if note else 0
+        self.need(max(60.0, 28 + note_h + keep))
         self.y += 6
         self.rect(self.M, self.y + 1.5, 3, 12, YELLOW, radius=1.5)
         self.text(self.M + 10, self.y, self.inner - 10, title, "h2")
@@ -559,7 +562,7 @@ def _hotspot_section(d: Doc, hotspots: list[dict]) -> None:
               "Phones the computers knew only as Wi-Fi hotspots: a network name and the access point "
               "address (BSSID). Android 11 and later, and recent iPhones, give the hotspot a new random "
               "address each time it is switched on, so one phone's hotspot appears as several access points "
-              "with the same name. The same name does not prove the same phone.")
+              "with the same name. The same name does not prove the same phone.", keep=150)
     for net in hotspots:
         n = len(net["sessions"])
         likely = net["likely_phone"]

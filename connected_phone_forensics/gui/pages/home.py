@@ -22,6 +22,7 @@ from ... import engine, live
 from ...plugin import load_plugins
 from .. import jobs, portable
 from ..casedata import OS_LABEL, VALIDATION_LABEL
+from ..hero import Banner, HeroArt
 from ..icons import OS_ICON
 from ..widgets import (
     THEME,
@@ -30,7 +31,6 @@ from ..widgets import (
     ChipRow,
     DropZone,
     IconBadge,
-    PageHeader,
     PageScroll,
     PathField,
     Segmented,
@@ -194,6 +194,26 @@ class LiveOutput(QWidget):
 
 
 class HomePage(QWidget):
+    def _hero(self) -> Banner:
+        """The page's banner: what the tool does, with a phone and a computer exchanging records."""
+        hero = Banner()
+        n = len(self.plugins)
+        chips = ChipRow([
+            Chip("Read-only", tone_fn("ok"), "ph.shield-check", "Nothing in the evidence is changed"),
+            Chip(f"{n} parsers", tone_fn("accent"), "ph.puzzle-piece", "Choose them below, under Parsers"),
+            Chip("Windows · macOS · Linux", tone_fn("muted"), "ph.desktop"),
+            Chip("The source of every record", tone_fn("muted"), "ph.fingerprint",
+                 "Every record keeps the file, the record inside it and the file's SHA-256"),
+        ])
+        title = label("Find every phone that touched these computers", "HeroTitle", wrap=True)
+        sub = label("USB, Bluetooth, hotspots, Phone Link, iPhone pairing and backups: read from a disk image, a "
+                    "triage collection or this computer, with the messages, contacts and photos the computers "
+                    "kept.", "Muted", wrap=True)
+        self.hero_art = HeroArt()
+        text = vbox("stretch", overline("New scan"), title, sub, 6, chips, "stretch", spacing=8)
+        hero.setLayout(hbox((text, 6), (self.hero_art, 5), spacing=16, margins=(30, 26, 22, 22)))
+        return hero
+
     def __init__(self, window):
         super().__init__()
         self.window_ = window
@@ -207,8 +227,7 @@ class HomePage(QWidget):
         content = QWidget()
         lay = vbox(spacing=20)
         content.setLayout(lay)
-        lay.addWidget(PageHeader("New scan", "Find the phones that were connected to the computers in a disk "
-                                              "image or triage collection, or to this computer."))
+        lay.addWidget(self._hero())
         columns = hbox(spacing=20)
         lay.addLayout(columns)
         left = vbox(spacing=16)
@@ -257,7 +276,9 @@ class HomePage(QWidget):
         grid.setHorizontalSpacing(14)
         grid.setVerticalSpacing(6)
         self.case_ref = QLineEdit()
-        self.case_ref.setPlaceholderText("e.g. 2026-0142")
+        self.case_ref.setPlaceholderText("e.g. ACME-Incident-EmpID39323")
+        self.case_ref.setToolTip("A clear name for the case. It titles the reports, the workbook and the case "
+                                 "dashboard, and names the output folder.")
         self.examiner = QLineEdit()
         self.examiner.setPlaceholderText("Your name")
         self.examiner.setText(str(window.settings.value("examiner", "")))
@@ -271,7 +292,7 @@ class HomePage(QWidget):
         self.allow_same.hide()
         self.allow_same.toggled.connect(self._allow_same_changed)
         self.output_note = label("", "Small", wrap=True)
-        grid.addWidget(label("Case reference", "Small"), 0, 0)
+        grid.addWidget(label("Case name", "Small"), 0, 0)
         grid.addWidget(label("Examiner", "Small"), 0, 1)
         grid.addWidget(self.case_ref, 1, 0)
         grid.addWidget(self.examiner, 1, 1)

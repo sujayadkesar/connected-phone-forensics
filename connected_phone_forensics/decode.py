@@ -183,9 +183,13 @@ def _android_models() -> dict[str, tuple[str, str]]:
 def _marketing_names() -> dict[str, tuple[str, str]]:
     """Lower-case marketing name -> (brand, name), to recognise a model in free text."""
     out: dict[str, tuple[str, str]] = {}
-    for brand, name in _android_models().values():
+    for code, (brand, name) in _android_models().items():
         if name and len(name) > 3:
             out.setdefault(name.lower(), (brand, name))
+        elif not name and " " in code:  # the model is its own marketing name: "Pixel 7a"
+            full = code if code.lower().startswith(brand.lower()) else f"{brand} {code}"
+            out.setdefault(code.lower(), (brand, full))
+            out.setdefault(full.lower(), (brand, full))
     return out
 
 
@@ -286,6 +290,10 @@ def phone_in_name(name: str | None) -> tuple[str, str | None] | None:
         hit = names.get(" ".join(words[:n]))
         if hit and n > 1:
             return hit[0], hit[1]
+    if 2 <= len(words) <= 5 and "'" not in text and any(ch.isdigit() for ch in "".join(words[1:])):
+        for word, brand in _BRAND_WORDS:  # "Redmi 9i", "iPhone 15 Pro": a model the list does not have
+            if word.strip() and words[0] == word.strip() and word not in ("apple", "google", "androidap"):
+                return brand, text
     for word, brand in _BRAND_WORDS:
         pattern = rf"\b{re.escape(word.strip())}\b" if word.strip() else None
         if pattern and re.search(pattern, low):

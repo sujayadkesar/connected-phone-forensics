@@ -88,8 +88,16 @@ class _Theme:
             widget.setIcon(ic)
             widget.setIconSize(QSize(size, size))
 
-    def on_change(self, fn: Callable[[], None]) -> None:
+    def on_change(self, fn: Callable[[], None], owner: QWidget | None = None) -> None:
+        """Call ``fn`` after a theme change. With ``owner``, the call goes when the owner is deleted
+        (pages recreate widgets as the examiner moves around; a deleted one must not stop a change)."""
         self._listeners.append(fn)
+        if owner is not None:
+            owner.destroyed.connect(lambda *_: self._drop(fn))
+
+    def _drop(self, fn: Callable[[], None]) -> None:
+        with contextlib.suppress(ValueError):
+            self._listeners.remove(fn)
 
     def set(self, p: Palette) -> None:
         self.palette = p
@@ -99,7 +107,10 @@ class _Theme:
             except RuntimeError:  # widget already deleted
                 self._forget(widget)
         for fn in list(self._listeners):
-            fn()
+            try:
+                fn()
+            except RuntimeError:  # its widget is gone
+                self._drop(fn)
 
 
 THEME = _Theme()
@@ -537,7 +548,7 @@ class IconBadge(QLabel):
         super().__init__()
         self.icon_name, self.tone, self._size = icon_name, tone, size
         self.setFixedSize(size, size)
-        THEME.on_change(self._refresh)
+        THEME.on_change(self._refresh, self)
         self._refresh()
 
     def set_tone(self, tone: str) -> None:
@@ -741,7 +752,7 @@ class SearchBox(QLineEdit):
         self.setPlaceholderText(placeholder)
         self.setClearButtonEnabled(True)
         self._action = self.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition)
-        THEME.on_change(self._icon)
+        THEME.on_change(self._icon, self)
         self._icon()
         self._timer = QTimer(self, singleShot=True, interval=delay_ms)
         self._timer.timeout.connect(lambda: self.search.emit(self.text()))

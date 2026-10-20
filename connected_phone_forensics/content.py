@@ -64,7 +64,8 @@ CATEGORIES: tuple[Category, ...] = (
              (_TIME, _PHONE, Column("name", "File name", 34), Column("kind", "Kind", 16),
               Column("mime", "Type", 14), Column("size", "Size (bytes)", 13, "number"),
               Column("dimensions", "Dimensions", 12), Column("party", "From / to", 26),
-              Column("file", "Saved copy", 40, "path"), _STATUS, _COMPUTER, _SOURCE)),
+              Column("copy", "Saved copy is", 16), Column("file", "Saved copy", 40, "path"), _STATUS, _COMPUTER,
+              _SOURCE)),
     Category("notifications", "Notifications", "ph.bell", "Notifications mirrored from the phone",
              (_TIME, _PHONE, Column("app", "App", 20), Column("title", "Title", 28),
               Column("text", "Text", 60, "long"), _STATUS, _COMPUTER, _SOURCE)),
@@ -230,10 +231,12 @@ def extract(records: list[dict], devices: list[dict]) -> dict[str, list[dict]]:
         if event.startswith("photo"):
             export = data.get("export") if isinstance(data.get("export"), dict) else {}
             dims = f"{data['width']}×{data['height']}" if data.get("width") and data.get("height") else ""
+            copy = ("" if not export.get("exported_path") else
+                    "the thumbnail only" if export.get("column") == "thumbnail" else "the full file")
             out["media"].append({**base, "category": "media", "name": data.get("name") or "(no name)",
                                  "kind": "Photo", "mime": data.get("mime_type") or "", "size": data.get("size"),
                                  "dimensions": dims, "party": "", "file": export.get("exported_path") or "",
-                                 "file_sha256": export.get("sha256") or ""})
+                                 "file_sha256": export.get("sha256") or "", "copy": copy})
             continue
 
         if event.startswith("rcs_file_"):
@@ -373,8 +376,16 @@ def phone_facts(device: dict) -> dict[str, Any]:
     model = first("model")
     model_name = ""
     if model:
+        from .decode import android_model
+
         summary = (model.get("decoded") or {}).get("summary") or ""
-        model_name = f"{summary} ({model['value']})" if summary.startswith("Apple ") else model["value"]
+        hit = android_model(model["value"])
+        if summary.startswith("Apple "):
+            model_name = f"{summary} ({model['value']})"
+        elif hit and hit[1].lower() != str(model["value"]).lower():
+            model_name = f"{hit[1]} ({model['value']})"  # CPH2585 -> OnePlus 12R (CPH2585)
+        else:
+            model_name = model["value"]
     os_name = OS_LABEL.get(device.get("phone_os") or "", "")
     version = first("os_version")
     if version and os_name:
@@ -451,7 +462,7 @@ def hotspot_networks(records: list[dict], devices: list[dict]) -> list[dict]:
             randomised = bool(mac) and bool(int(mac[:2], 16) & 0x02)
             sessions.append({
                 "device": dev_id, "bssid": mac, "randomised": randomised,
-                "maker": "" if not mac else ("randomised address (no maker)" if randomised
+                "maker": "" if not mac else ("randomised (no maker)" if randomised
                                               else (mac_vendor(mac) or "unknown maker")),
                 "first": first, "last": times[-1] if times else None,
                 "names": ", ".join(sorted(ssids)) if len(ssids) > 1 else ssid,
