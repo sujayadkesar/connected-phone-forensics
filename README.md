@@ -150,7 +150,7 @@ The executables are not code-signed yet, so SmartScreen may say *Windows protect
 choose **More info → Run anyway**. Check the download against `SHA256SUMS.txt` first:
 
 ```powershell
-certutil -hashfile ConnectedPhoneForensics-0.3.2-windows-x64.exe SHA256
+certutil -hashfile ConnectedPhoneForensics-0.3.3-windows-x64.exe SHA256
 ```
 
 Then click **Run the demo case** to see it work on synthetic data, or drop an evidence folder on

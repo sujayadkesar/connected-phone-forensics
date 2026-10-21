@@ -8,7 +8,8 @@ report.html, workbook.xlsx and the timeline.
 
 Drawn with Qt's PDF writer: text stays selectable, any script is shaped and falls back to an
 installed font that has it (device and contact names are often not in Latin script), and the
-logo and phone drawings are vector graphics.
+logo and phone drawings are vector graphics. Nothing is drawn with a transparent gradient
+(Chrome, Edge and other PDFium viewers paint those as solid colour): a phone's screen is an image.
 """
 
 from __future__ import annotations
@@ -465,9 +466,14 @@ def _cover(d: Doc, case: CaseData, items: dict[str, list[dict]]) -> None:
     band = 168.0
     d.rect(0, 0, d.W, band, NAVY)
     d.rect(0, band - 3, d.W, 3, YELLOW)
-    if d.p is not None:  # soft circles, echoing the logo's screen
+    if d.p is not None:  # soft circles, echoing the logo's screen, kept above the yellow rule
+        from PySide6.QtCore import QRectF
+
+        d.p.save()
+        d.p.setClipRect(QRectF(0, 0, d.W * d.U, (band - 3) * d.U))
         d.rect(d.W - 150, -60, 230, 230, BRAND, radius=115, alpha=40)
         d.rect(d.W - 70, 70, 120, 120, SKY, radius=60, alpha=22)
+        d.p.restore()
     d.svg("lockup-two-line-dark.svg", d.M - 4, 30, 176)
     d.text(d.M, 104, 300, "Phone connection summary", "cover_over")
     d.text(d.M, 116, d.inner - 40, case.title, "cover_title", wrap="elide")

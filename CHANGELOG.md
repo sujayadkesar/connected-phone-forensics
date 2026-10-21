@@ -6,6 +6,16 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-21
+
+### Fixed
+
+- In Chrome, Edge and other PDF viewers built on PDFium, the PDF summary showed every drawn phone
+  with a blank white screen, and a recovered Phone Link wallpaper under solid black: they paint a
+  gradient's transparency as solid colour. A phone's screen is now drawn into the PDF as one
+  opaque image, so it looks the same in every viewer. The cover's soft circles no longer spill
+  below its band.
+
 ## [0.3.2] - 2026-10-21
 
 ### Fixed
@@ -301,7 +311,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.3
 [0.3.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.2
 [0.3.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.1
 [0.3.0]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.0

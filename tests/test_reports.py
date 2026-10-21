@@ -116,6 +116,46 @@ def test_pdf_keeps_names_in_other_scripts(demo_case, tmp_path):
     assert "Телефон Ивана" in text
 
 
+def _pdfium_problems(path: Path) -> list[str]:
+    """What Chrome, Edge and other PDFium viewers would paint wrongly: a soft mask (a gradient's
+    transparency, which they paint as solid colour), or an image painted while a fill's
+    transparency is still in force (Qt's PDF writer does not reset it for images)."""
+    import pypdf
+
+    problems = []
+    for n, page in enumerate(pypdf.PdfReader(str(path)).pages, 1):
+        res = page["/Resources"]
+        states, xobjects = res.get("/ExtGState", {}), res.get("/XObject", {})
+        problems += [f"page {n}: soft mask {name}" for name, gs in states.items()
+                     if gs.get_object().get("/SMask", "/None") != "/None"]
+        alpha, saved = 1.0, []
+        for operands, op in page.get_contents().operations:
+            if op == b"q":
+                saved.append(alpha)
+            elif op == b"Q":
+                alpha = saved.pop() if saved else 1.0
+            elif op == b"gs":
+                alpha = float(states[operands[0]].get_object().get("/ca", alpha))
+            elif op == b"Do" and xobjects[operands[0]].get_object()["/Subtype"] == "/Image" and alpha < 1:
+                problems.append(f"page {n}: image {operands[0]} painted at {alpha:.0%} opacity")
+    return problems
+
+
+def test_pdf_paints_the_same_in_chrome_and_edge(demo_case):
+    pytest.importorskip("pypdf")
+    case, _ = demo_case
+    assert _pdfium_problems(case.outdir / "summary.pdf") == []
+
+
+def test_pdf_cover_circles_stay_in_the_band(demo_case):
+    from connected_phone_forensics.output.pdf import preview_pages
+
+    case, _ = demo_case
+    cover = preview_pages(case, dpi=72)[0]  # a pixel a point; the navy band ends at 168 pt
+    below = {cover.pixelColor(x, y).name() for y in (170, 175, 180, 185) for x in range(300, 595, 5)}
+    assert below == {"#ffffff"}
+
+
 def test_outputs_can_be_skipped(tmp_path):
     from connected_phone_forensics.cli import main
 

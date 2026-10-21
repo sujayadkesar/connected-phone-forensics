@@ -20,6 +20,7 @@ from PySide6.QtGui import (
     QFont,
     QImage,
     QLinearGradient,
+    QPaintEngine,
     QPainter,
     QPainterPath,
     QPen,
@@ -173,29 +174,13 @@ def paint_phone(p: QPainter, bounds: QRectF, look: PhoneLook, *, font_family: st
     clip = _rounded(screen, max(s_radius, w * 0.01))
     p.save()
     p.setClipPath(clip)
-    if look.wallpaper is not None:
-        img = look.wallpaper
-        scale = max(screen.width() / img.width(), screen.height() / img.height())
-        tw, th = img.width() * scale, img.height() * scale
-        p.drawImage(QRectF(screen.center().x() - tw / 2, screen.center().y() - th / 2, tw, th), img)
-        veil = QLinearGradient(screen.topLeft(), screen.bottomLeft())
-        veil.setColorAt(0.0, QColor(0, 0, 0, 90))
-        veil.setColorAt(0.45, QColor(0, 0, 0, 20))
-        veil.setColorAt(1.0, QColor(0, 0, 0, 140))
-        p.fillRect(screen, veil)
+    if p.paintEngine().type() == QPaintEngine.Type.Pdf:
+        # PDF viewers built on PDFium (Chrome, Edge, Android) paint a gradient's transparency as solid
+        # colour, which blanked the screen. On a PDF it is one opaque image, drawn straight after the
+        # opaque body: Qt's PDF writer paints an image with the transparency of the last fill.
+        p.drawImage(screen, _screen_image(screen, look, p))
     else:
-        p.fillRect(screen, _screen_gradient(screen, look.os))
-        glow = QRadialGradient(QPointF(screen.left() + screen.width() * 0.25, screen.top() + screen.height() * 0.3),
-                               screen.width() * 0.9)
-        glow.setColorAt(0.0, QColor(255, 255, 255, 46))
-        glow.setColorAt(1.0, QColor(255, 255, 255, 0))
-        p.fillRect(screen, glow)
-        # a few soft shapes, like a default wallpaper
-        p.setPen(Qt.PenStyle.NoPen)
-        for cx, cy, rr, alpha in ((0.85, 0.72, 0.55, 26), (0.1, 0.95, 0.45, 20), (0.6, 0.15, 0.3, 18)):
-            p.setBrush(QColor(255, 255, 255, alpha))
-            p.drawEllipse(QPointF(screen.left() + screen.width() * cx, screen.top() + screen.height() * cy),
-                          screen.width() * rr, screen.width() * rr)
+        _paint_screen(p, screen, look)
 
     if look.minimal:
         p.restore()  # screen clip
@@ -292,6 +277,50 @@ def paint_phone(p: QPainter, bounds: QRectF, look: PhoneLook, *, font_family: st
         p.drawEllipse(button)
     p.restore()
     return body
+
+
+def _paint_screen(p: QPainter, screen: QRectF, look: PhoneLook) -> None:
+    """The screen's background: the wallpaper under a veil, or a default-looking one."""
+    if look.wallpaper is not None:
+        img = look.wallpaper
+        scale = max(screen.width() / img.width(), screen.height() / img.height())
+        tw, th = img.width() * scale, img.height() * scale
+        p.drawImage(QRectF(screen.center().x() - tw / 2, screen.center().y() - th / 2, tw, th), img)
+        veil = QLinearGradient(screen.topLeft(), screen.bottomLeft())
+        veil.setColorAt(0.0, QColor(0, 0, 0, 90))
+        veil.setColorAt(0.45, QColor(0, 0, 0, 20))
+        veil.setColorAt(1.0, QColor(0, 0, 0, 140))
+        p.fillRect(screen, veil)
+        return
+    p.fillRect(screen, _screen_gradient(screen, look.os))
+    glow = QRadialGradient(QPointF(screen.left() + screen.width() * 0.25, screen.top() + screen.height() * 0.3),
+                           screen.width() * 0.9)
+    glow.setColorAt(0.0, QColor(255, 255, 255, 46))
+    glow.setColorAt(1.0, QColor(255, 255, 255, 0))
+    p.fillRect(screen, glow)
+    # a few soft shapes, like a default wallpaper
+    p.setPen(Qt.PenStyle.NoPen)
+    for cx, cy, rr, alpha in ((0.85, 0.72, 0.55, 26), (0.1, 0.95, 0.45, 20), (0.6, 0.15, 0.3, 18)):
+        p.setBrush(QColor(255, 255, 255, alpha))
+        p.drawEllipse(QPointF(screen.left() + screen.width() * cx, screen.top() + screen.height() * cy),
+                      screen.width() * rr, screen.width() * rr)
+
+
+def _screen_image(screen: QRectF, look: PhoneLook, p: QPainter, dpi: float = 300) -> QImage:
+    """The screen's background painted by the raster engine, opaque, at ``dpi`` on ``p``'s device."""
+    size = p.worldTransform().mapRect(screen).size()  # in device units
+    per_unit = dpi / max(1, p.device().logicalDpiX())
+    img = QImage(max(1, round(size.width() * per_unit)), max(1, round(size.height() * per_unit)),
+                 QImage.Format.Format_RGB32)
+    img.fill(QColor("#0A0E17"))
+    q = QPainter(img)
+    q.setRenderHint(QPainter.RenderHint.Antialiasing)
+    q.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    q.scale(img.width() / screen.width(), img.height() / screen.height())
+    q.translate(-screen.left(), -screen.top())
+    _paint_screen(q, screen, look)
+    q.end()
+    return img
 
 
 def _lens(p: QPainter, c: QPointF, r: float, ring: bool = False) -> None:
