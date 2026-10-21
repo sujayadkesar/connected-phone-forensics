@@ -6,6 +6,12 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-21
+
+No changes to the program since 0.3.3; this release starts the 0.4 series. From 0.3.2 or
+earlier, it brings 0.3.3's fix to the PDF summary: drawn phones now look the same in Chrome,
+Edge and other PDF viewers built on PDFium.
+
 ## [0.3.3] - 2026-10-21
 
 ### Fixed
@@ -311,7 +317,8 @@ Found by a code review in October 2026 and not fixed in this release:
 - A symlinked `/home` (Fedora Silverblue and similar) hides Linux user profiles.
 - About 30 lower-severity findings: timestamp handling, coverage notes, report wording.
 
-[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/sujayadkesar/connected-phone-forensics/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.4.1
 [0.3.3]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.3
 [0.3.2]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.2
 [0.3.1]: https://github.com/sujayadkesar/connected-phone-forensics/releases/tag/v0.3.1
